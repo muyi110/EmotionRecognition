@@ -5,6 +5,7 @@ sys.path.append("../common/") # 将其他模块路径添加到系统搜索路径
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
 from read_data import read_data
+# from read_raw_data import read_data
 from dann import DANNModel
 from sklearn.manifold import TSNE # 用于高维特征可视化
 from utils import plot_embedding
@@ -74,6 +75,8 @@ if __name__ == "__main__":
     for people_num_ in people_num_list:
         datas, labels = read_data(people_list=[people_num_], windows=windows, overlapping=windows-1, 
                                   classify_object_name=0, mv_flag=True, lds_flag=False)
+        # datas, labels = read_data(people_list=[people_num_], trial_list=list(range(40)), path="../../samples/"
+        #                           , classify_object_name=0)
         datas = np.array(datas)
         labels = np.array(labels)
         datas = datas.transpose((0,2,1))
@@ -107,7 +110,7 @@ if __name__ == "__main__":
             dann = DANNModel(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels,
                              dropout=dropout, batch_size=batch_size, in_channels=input_channels, train_ratio=0.5,
                              random_state=42)
-            dann.fit(X=datas_train, y=train_labels, num_steps=851*52, X_test=datas_test, y_test=test_labels,
+            dann.fit(X=datas_train, y=train_labels, num_steps=351*52, X_test=datas_test, y_test=test_labels,
                      outputs=n_outputs, people_num=windows, training_mode="dann")
 
             dann.restore()

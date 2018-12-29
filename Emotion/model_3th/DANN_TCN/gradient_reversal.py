@@ -13,7 +13,7 @@ class GradientReversalBuilder():
         grad_name = "GradientReversal%d" % self._num_calls
         @ops.RegisterGradient(grad_name)
         def _gradients_reversal(op, grad):
-            return [tf.negative(grad) * l]
+            return tf.multiply(tf.negative(grad), l)
         
         g = tf.get_default_graph()
         # gradient_override_map({op_A_type: op_B_type}) 是用 op_B 的反向传播机制代替 op_A 的反向传播机制，

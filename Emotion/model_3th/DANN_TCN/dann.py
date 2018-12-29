@@ -8,7 +8,7 @@ from tcn import TCN
 from sklearn.exceptions import NotFittedError
 from gradient_reversal import gradient_reversal
 #from tensorflow.contrib.layers import batch_norm
-from utils import batch_generator
+from utils import batch_generator, batch_generator_new
 
 class DANNModel():
     def __init__(self, 
@@ -83,10 +83,14 @@ class DANNModel():
             self.classify_labels = tf.cond(self._training, source_labels, all_labels)
 
             # p_temp_0 = tf.contrib.layers.fully_connected(classify_features, 20, activation_fn=tf.nn.relu)
-            logits = tf.contrib.layers.fully_connected(classify_features, n_outputs, activation_fn=None) 
+            all_logits = tf.contrib.layers.fully_connected(self.feature, n_outputs, activation_fn=None) 
+            logits = tf.cond(self._training, lambda:all_logits[:self.batch_size // 2], lambda:all_logits)
             self.predictor = tf.nn.softmax(logits, name="predictor")
             self.predictor_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.classify_labels, 
                                                                                  logits=logits)
+            # 开始计算目标域和源域标签分布差异损失
+            self.S_T_label_loss = tf.losses.mean_squared_error(labels=tf.reduce_mean(self.predictor[0]), predictions=tf.reduce_mean(tf.nn.softmax(all_logits[self.batch_size//2:])[0])) + tf.losses.mean_squared_error(labels=tf.reduce_mean(self.predictor[1]), predictions=tf.reduce_mean(tf.nn.softmax(all_logits[self.batch_size//2:])[1])) 
+            self.S_T_feature_loss = tf.losses.mean_squared_error(labels=tf.reduce_mean(self.feature[:self.batch_size//2]), predictions=tf.reduce_mean(self.feature[self.batch_size//2:]))
         # softmax 用于域判别器
         with tf.variable_scope("domain_predictor"):
             # 反向传播时候翻转梯度
@@ -98,25 +102,19 @@ class DANNModel():
             # self.domain_loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=d_logits, labels=self.domain_labels)
             self.domain_loss = tf.losses.log_loss(predictions=self.domain_predictor, labels=self.domain_labels)
             # self.domain_loss = tf.losses.hinge_loss(logits=d_logits, labels=self.domain_labels)
-            
-            # 下面开始计算源域样本在判别器上的损失
-            # self.domain_predictor_source = self.domain_predictor[:int(self.batch_size*self.train_ratio)]
-            self.domain_predictor_source = self.domain_predictor[:]
-            self.domain_loss_source = tf.losses.mean_squared_error(predictions=self.domain_predictor_source, labels=tf.subtract(self.domain_labels[:], 0.5))
-            #self.domain_loss_source = tf.losses.mean_squared_error(predictions=self.domain_predictor_source, labels=tf.subtract(self.domain_labels[:int(self.batch_size*self.train_ratio)], 0.5))
 
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
         # 构建损失节点
         pred_loss = tf.reduce_mean(self.predictor_loss)
         domain_loss_ = tf.reduce_mean(self.domain_loss)
-        domain_loss_source = tf.multiply(tf.reduce_mean(self.domain_loss_source), 1)
-        total_loss = tf.add(pred_loss, domain_loss_)
+        # total_loss = tf.add(pred_loss, domain_loss_)
+        total_loss = tf.add(tf.add(pred_loss, domain_loss_), self.S_T_label_loss * 0.1)
         # 构建训练节点
         pre_train_op = self.optimizer_class2(learning_rate=self.learning_rate).minimize(pred_loss)
         dann_train_op = self.optimizer_class1(learning_rate=self.learning_rate).minimize(total_loss)
         domain_train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 
-                                         scope="domain_predictor/d_temp|domain_predictor/d_logits|domain_predictor/d_temp1")
+                                         scope="domain_predictor/d_temp|domain_predictor/d_logits")
         domain_train_op = self.optimizer_class1(learning_rate=self.learning_rate).minimize(domain_loss_) 
                                                                                            #var_list=domain_train_vars)
         # 构建评估节点
@@ -161,39 +159,33 @@ class DANNModel():
         best_acc = 0 # 测试集最好的准确率
         self._session = tf.Session(graph=self._graph)
         epoch_count = 0
-        k = 3
         with self._session.as_default() as sess:
             sess.run(self._init)
             # batch 生成器
             gen_source_batch = batch_generator([X, y], int(self.batch_size*self.train_ratio))
-            gen_target_batch = batch_generator([X_test, y_test], self.batch_size-int(self.batch_size*self.train_ratio))
+            gen_target_batch = batch_generator([np.vstack([X_test, X_test, X_test, X_test]), np.hstack([y_test, y_test, y_test, y_test])], self.batch_size-int(self.batch_size*self.train_ratio))
             gen_source_only_batch = batch_generator([X, y], self.batch_size)
             # domain_label = np.vstack([np.tile([1, 0], [int(self.batch_size*self.train_ratio), 1]), 
             #                           np.tile([0, 1], [self.batch_size-int(self.batch_size*self.train_ratio), 1])])
             temp_list=[1]*int(self.batch_size*self.train_ratio)+[0]*(self.batch_size-int(self.batch_size*self.train_ratio))
             domain_label = np.array(temp_list).reshape(-1, 1)
+            gen_batch = batch_generator_new([X, y, X_test, y_test], self.batch_size)
             for step in range(num_steps):
                 p = float(step) / num_steps
                 l = 2. / (1. + np.exp(-10*p)) - 1
-                lr = 0.008 / (1 + 10 * p)**0.75
+                lr = 0.0005 / (1 + 10 * p)**0.75
                 
                 if training_mode == "dann":
                     X0, y0 = next(gen_source_batch)
                     X1, y1 = next(gen_target_batch)
                     X_batch = np.vstack([X0, X1])
                     y_batch = np.hstack([y0, y1])
+                    # X_batch, y_batch = next(gen_batch)
                     assert(y_batch.shape==(self.batch_size,))
                     assert(X_batch.shape==(self.batch_size, self.sequence_length, self.in_channels))
-                    if k > 0:
-                        k -= 1
-                        sess.run(self._dann_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
-                                                                  self.domain_labels:domain_label, self._training:True, 
-                                                                  self.l:l, self.learning_rate:lr})
-                    else:
-                        k = 3
-                        sess.run(self._dann_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
-                                                                    self.domain_labels:domain_label, self._training:True, 
-                                                                    self.l:l, self.learning_rate:lr})
+                    sess.run(self._dann_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
+                                                             self.domain_labels:domain_label, self._training:True, 
+                                                             self.l:l, self.learning_rate:lr})
                     # print info
                     if step % (len(y)//(self.batch_size*self.train_ratio)) == 0 and step != 0:
                         epoch_count += 1
