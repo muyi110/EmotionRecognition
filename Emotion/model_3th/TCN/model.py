@@ -269,7 +269,7 @@ def split_datas_with_cross_validatioan_random(datas, labels, windows, seed=None)
 
 if __name__ == "__main__":
     people_num_list = list(range(0, 32))
-    windows = 12 # 样本窗口大小
+    windows = 9 # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
     samples_info_dic = {}
@@ -312,7 +312,7 @@ if __name__ == "__main__":
             tcn = TCNClassifier(num_channels=num_channels, sequence_length = seq_length, kernel_size=kernel_size, 
                                 dropout=dropout, batch_size=batch_size, in_channels=input_channels, 
                                 random_state=42, learning_rate=learning_rate)
-            tcn.fit(X=datas_train, y=train_labels, n_epochs=351, X_test=datas_test, y_test=test_labels, 
+            tcn.fit(X=datas_train, y=train_labels, n_epochs=101, X_test=datas_test, y_test=test_labels, 
                     people_num_=windows)
             tcn.restore()
             total_acc_test = 0

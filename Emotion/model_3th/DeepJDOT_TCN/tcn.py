@@ -8,7 +8,7 @@ from tensorflow.contrib.framework.python.ops import add_arg_scope
 # 构建 He initializer 节点
 init_weights = tf.contrib.layers.variance_scaling_initializer()
 # 构建 random_normal_initializer 初始化节点
-# init_weights = tf.random_normal_initializer(0, 0.01)
+#init_weights = tf.random_normal_initializer(0, 0.01)
 def get_name(layer_name, counters):
     '''
     用来跟踪网络层的名字
@@ -124,15 +124,7 @@ def temporal_ConvNet(input_layer, num_channels, sequence_length, kernel_size=3,
 def TCN(input_layer, output_size, num_channels, sequence_length, kernel_size, dropout, is_training=True):
     tcn = temporal_ConvNet(input_layer=input_layer, num_channels=num_channels, sequence_length=sequence_length, 
                            kernel_size=kernel_size, dropout=dropout, is_training=is_training)
-    W = tf.get_variable(name="W", dtype=tf.float32, shape=(9, 1, 1, 1), 
-                        initializer=tf.contrib.layers.xavier_initializer())
-    features_temp = tf.nn.conv2d(tf.reshape(tcn, [-1, tcn.get_shape()[1], tcn.get_shape()[2], 1]), 
-                                 filter=W, padding="VALID", strides=[1, 1, 1, 1])
-    b = tf.get_variable('b', shape=[1], dtype=tf.float32, 
-                        initializer=tf.zeros_initializer(), trainable=True)
-    features_temp = tf.nn.bias_add(features_temp, b)
-    features_temp = tf.sigmoid(features_temp)
-    linear = tf.layers.flatten(features_temp)
-    linear = tf.contrib.layers.fully_connected(linear, output_size, activation_fn=None)
-    print("linear: ", linear.get_shape())
-    return linear
+    # linear = tf.contrib.layers.fully_connected(tcn[:, -1,:], output_size, activation_fn=None)
+    # return linear
+    # tcn.shape=(samples, seq_length, features)
+    return tcn
