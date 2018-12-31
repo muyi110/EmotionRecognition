@@ -4,13 +4,13 @@
 ######################################################################
 import numpy as np
 import ot
-#from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist
 import tensorflow as tf
 from sklearn.exceptions import NotFittedError
 from tcn import TCN
 from utils import batch_generator
 
-def DeepJDOT():
+class DeepJDOT():
     def __init__(self,
                  sequence_length,
                  kernel_size,
@@ -18,11 +18,11 @@ def DeepJDOT():
                  dropout,
                  batch_size,
                  in_channels,
-                 optimizer_class=tf.train.AdamOptimizer,
-                 jdot_alpha=0.001,
-                 jdot_lambda=0.0001,
+                 jdot_alpha=30,
+                 jdot_lambda=1,
                  learning_rate=0.001,
-                 lr_decay=True):
+                 lr_decay=False,
+                 optimizer_class=tf.train.AdamOptimizer):
         self.sequence_length=sequence_length
         self.kernel_size=kernel_size
         self.num_channels=num_channels
@@ -32,7 +32,7 @@ def DeepJDOT():
         self.optimizer_class=optimizer_class
         self.jdot_alpha=jdot_alpha
         self.jdot_lambda=jdot_lambda
-        self.gamma=np.zeros(shape=(self.batch_size//2, self.batch_size//2)) # 零初始化 gamma (coupling in OT)
+        self.gamma=np.ones(shape=(self.batch_size//2, self.batch_size//2)) # 零初始化 gamma (coupling in OT)
         self.lr=learning_rate
         self.lr_decay=lr_decay
         self._session = None
@@ -54,10 +54,11 @@ def DeepJDOT():
             features = TCN(self.inputs, n_outputs, self.num_channels, self.sequence_length, 
                                self.kernel_size, self.dropout, is_training=self._training)
             # 取最后一个输出作为最终特征
+            # self.feature = tf.contrib.layers.fully_connected(features[:, -1, :], 32, activation_fn=tf.nn.relu)
             self.feature = features[:, -1, :]
         # softmax 用于分类预测
         with tf.variable_scope("label_predictor"):
-            logits = tf.contrib.layers.full_connected(self.feature, n_outputs, activation_fn=None)
+            logits = tf.contrib.layers.fully_connected(self.feature, n_outputs, activation_fn=None)
             self.predictor = tf.nn.softmax(logits, name="predictor")
             # 下面开始计算源域损失(分类损失)
             source_logits = tf.slice(logits, [0, 0], [self.batch_size//2, -1])
@@ -67,11 +68,21 @@ def DeepJDOT():
             # 评估模型的时候用到的损失
             self.pre_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, 
                                                                                           labels=self.labels))
-            # 下面开始计算目标域损失(分类损失)
+            # # 下面开始计算目标域损失(cross-entropy loss)
+            # target_predictor = tf.slice(self.predictor, [self.batch_size//2, 0], [self.batch_size//2, -1])
+            # # 将预测的概率转为对应的类别标签, 并转为 one-hot 编码形式
+            # target_pre_labels_one_hot = tf.one_hot(tf.argmax(target_predictor, axis=1), 2)
+            # target_predictor = tf.log(target_pre_labels_one_hot+1e-10)
+            # source_labels_one_hot = tf.one_hot(source_labels, 2)
+            # target_loss = tf.multiply(tf.matmul(source_labels_one_hot, tf.transpose(target_predictor)), -1)
+            # self.target_loss = tf.reduce_sum(tf.multiply((self.gamma_tf * target_loss), self.jdot_lambda))
+            # 下面开始计算目标损失(hinge loss)
             target_predictor = tf.slice(self.predictor, [self.batch_size//2, 0], [self.batch_size//2, -1])
-            target_predictor = tf.log(target_predictor)
-            source_labels_one_hot = tf.one_hot(source_labels, 2)
-            target_loss = tf.multiply(tf.matmul(source_labels_one_hot, tf.transpose(target_predictor)), -1)
+            # 将预测的概率转为对应的类别标签
+            target_pre_labels = tf.argmax(target_predictor, axis=1)
+            target_predictor = tf.cast(tf.reshape(target_pre_labels, (1, -1)) * 2 - 1, tf.int32)
+            source_labels = tf.cast(tf.reshape(source_labels, (-1, 1)) * 2 -1, tf.int32)
+            target_loss = tf.cast(tf.maximum(0, 1-tf.matmul(source_labels, target_predictor)), tf.float32)
             self.target_loss = tf.reduce_sum(tf.multiply((self.gamma_tf * target_loss), self.jdot_lambda))
             # 下面开始计算特征损失(feature allignment loss)
             gs = tf.slice(self.feature, [0, 0], [self.batch_size//2, -1]) # 源域的特征
@@ -86,7 +97,7 @@ def DeepJDOT():
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
         # 构建损失节点
-        total_loss = self.source_loss + self.target_loss + self.allign_loss
+        total_loss = self.target_loss + self.allign_loss + self.source_loss
         pre_loss = self.pre_loss
         # 构建训练节点
         train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(total_loss)
@@ -98,7 +109,7 @@ def DeepJDOT():
         # 构建模型保存节点
         saver = tf.train.Saver()
 
-        self._pre_loss, self._train_op, self._label_acc = pre_loss, train_op, label_acc
+        self._pre_loss, self._train_op, self._label_acc, self._total_loss = pre_loss, train_op, label_acc, total_loss
         self._init, self._saver = init, saver
     
     def close_session(self):
@@ -135,8 +146,8 @@ def DeepJDOT():
                                                 np.hstack([y_test, y_test, y_test, y_test])], self.batch_size//2)
             for step in range(num_steps):
                 # 学习率衰减
-                if self.lr_decay and step % 1000 == 0 and step !=0:
-                    self.lr *= 0.1 
+                if self.lr_decay and step % 2000 == 0 and step !=0:
+                    self.lr *= 0.5
                 X0, y0 = next(gen_source_batch)
                 X1, y1 = next(gen_target_batch)
                 X_batch = np.vstack([X0, X1])
@@ -145,15 +156,31 @@ def DeepJDOT():
                 C1, C0 = sess.run([self._target_loss, self._gdist], 
                                    feed_dict={self.inputs:X_batch, self.labels:y_batch})
                 C = (self.jdot_alpha * C0) + (C1 * self.jdot_lambda)
+                # feature, predictor = sess.run([self.feature, self.predictor], feed_dict={self.inputs:X_batch})
+                # gs_batch = X_batch.reshape(X_batch.shape[0], -1)[:self.batch_size//2, :]
+                # gt_batch = X_batch.reshape(X_batch.shape[0], -1)[self.batch_size//2:, :]
+                # ft_pred = predictor[self.batch_size//2:,:]
+                # with self._graph.as_default():
+                #     ys = sess.run(tf.one_hot(y0, 2))
+                # C0 = cdist(gs_batch, gt_batch, metric='sqeuclidean')
+                # C1 = cdist(ys, ft_pred, metric='sqeuclidean')
+                # C = (self.jdot_alpha * C0) + C1
                 # 优化 copuling
                 gamma = ot.emd(ot.unif(self.batch_size//2), ot.unif(self.batch_size//2), C)
                 # 更新 gamma 参数 (coupling in OT)
                 self.gamma = gamma
-                # 固定 coupling 更新网络的参数
+                # 根据求得的 gamma 更新目标域的标签
+                # y1_update = np.zeros_like(y1)
+                # target_labels_index = np.argmax(self.gamma, axis=0)
+                # for i in range(len(target_labels_index)):
+                #     y1_update[i] = y0[target_labels_index[i]]
+                # # 固定 coupling 更新网络的参数
+                # X_batch = np.vstack([X0, X1])
+                # y_batch = np.hstack([y0, y1_update])
                 sess.run(self._train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, self.learning_rate:self.lr,
                                                     self.gamma_tf:self.gamma, self._training:True})
                 # 打印信息
-                if step % 100 == 0 and step != 0:
+                if step % 50 == 0 and step != 0:
                     train_loss, train_acc = sess.run([self._pre_loss, self._label_acc], 
                                                       feed_dict={self.inputs:X, self.labels:y})
                     print("{}\ttraining loss: {:.4f}\t|  trainning accuracy: {:.2f}%".format(step, 
@@ -161,6 +188,7 @@ def DeepJDOT():
                     test_loss, test_acc = sess.run([self._pre_loss, self._label_acc], 
                                                       feed_dict={self.inputs:X_test, self.labels:y_test})
                     print("test loss: {:.4f}\t|  test accuracy: {:.2f}%".format(test_loss, test_acc*100))
+                    print(C1.sum(), C0.sum())
                     if test_acc >= best_acc:
                         best_acc = test_acc
                         self.save("./my_model/"+self._num_+"/train_model.ckpt")
