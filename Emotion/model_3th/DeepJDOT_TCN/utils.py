@@ -7,6 +7,7 @@ def _shuffle_aligned_list(datas):
     data: 一个列表，存放训练数据和对应的标签
     '''
     num = datas[0].shape[0]  # 获取样本的个数
+    assert(num==1664)
     p = np.random.permutation(num)
     return [d[p] for d in datas]
 

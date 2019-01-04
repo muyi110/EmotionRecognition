@@ -18,10 +18,10 @@ class DeepJDOT():
                  dropout,
                  batch_size,
                  in_channels,
-                 jdot_alpha=30,
+                 jdot_alpha=20,
                  jdot_lambda=1,
                  learning_rate=0.001,
-                 lr_decay=False,
+                 lr_decay=True,
                  optimizer_class=tf.train.AdamOptimizer):
         self.sequence_length=sequence_length
         self.kernel_size=kernel_size
@@ -32,7 +32,7 @@ class DeepJDOT():
         self.optimizer_class=optimizer_class
         self.jdot_alpha=jdot_alpha
         self.jdot_lambda=jdot_lambda
-        self.gamma=np.ones(shape=(self.batch_size//2, self.batch_size//2)) # 零初始化 gamma (coupling in OT)
+        self.gamma=np.zeros(shape=(self.batch_size//2, self.batch_size//2)) # 零初始化 gamma (coupling in OT)
         self.lr=learning_rate
         self.lr_decay=lr_decay
         self._session = None
@@ -54,10 +54,10 @@ class DeepJDOT():
             features = TCN(self.inputs, n_outputs, self.num_channels, self.sequence_length, 
                                self.kernel_size, self.dropout, is_training=self._training)
             # 取最后一个输出作为最终特征
-            # self.feature = tf.contrib.layers.fully_connected(features[:, -1, :], 32, activation_fn=tf.nn.relu)
             self.feature = features[:, -1, :]
         # softmax 用于分类预测
         with tf.variable_scope("label_predictor"):
+            # temp = tf.contrib.layers.fully_connected(self.feature, 10, activation_fn=tf.nn.relu)
             logits = tf.contrib.layers.fully_connected(self.feature, n_outputs, activation_fn=None)
             self.predictor = tf.nn.softmax(logits, name="predictor")
             # 下面开始计算源域损失(分类损失)
@@ -101,6 +101,7 @@ class DeepJDOT():
         pre_loss = self.pre_loss
         # 构建训练节点
         train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(total_loss)
+        source_train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(pre_loss)
         # 构建评估节点
         correct_label_predictor = tf.nn.in_top_k(self.predictor, self.labels, 1)
         label_acc = tf.reduce_mean(tf.cast(correct_label_predictor, tf.float32))
@@ -110,6 +111,7 @@ class DeepJDOT():
         saver = tf.train.Saver()
 
         self._pre_loss, self._train_op, self._label_acc, self._total_loss = pre_loss, train_op, label_acc, total_loss
+        self._source_train_op = source_train_op
         self._init, self._saver = init, saver
     
     def close_session(self):
@@ -145,40 +147,36 @@ class DeepJDOT():
             gen_target_batch = batch_generator([np.vstack([X_test, X_test, X_test, X_test]), 
                                                 np.hstack([y_test, y_test, y_test, y_test])], self.batch_size//2)
             for step in range(num_steps):
-                # 学习率衰减
-                if self.lr_decay and step % 2000 == 0 and step !=0:
-                    self.lr *= 0.5
-                X0, y0 = next(gen_source_batch)
-                X1, y1 = next(gen_target_batch)
-                X_batch = np.vstack([X0, X1])
-                y_batch = np.hstack([y0, y1])
-                # 固定网络的参数，更新 coupling in OT
-                C1, C0 = sess.run([self._target_loss, self._gdist], 
-                                   feed_dict={self.inputs:X_batch, self.labels:y_batch})
-                C = (self.jdot_alpha * C0) + (C1 * self.jdot_lambda)
-                # feature, predictor = sess.run([self.feature, self.predictor], feed_dict={self.inputs:X_batch})
-                # gs_batch = X_batch.reshape(X_batch.shape[0], -1)[:self.batch_size//2, :]
-                # gt_batch = X_batch.reshape(X_batch.shape[0], -1)[self.batch_size//2:, :]
-                # ft_pred = predictor[self.batch_size//2:,:]
-                # with self._graph.as_default():
-                #     ys = sess.run(tf.one_hot(y0, 2))
-                # C0 = cdist(gs_batch, gt_batch, metric='sqeuclidean')
-                # C1 = cdist(ys, ft_pred, metric='sqeuclidean')
-                # C = (self.jdot_alpha * C0) + C1
-                # 优化 copuling
-                gamma = ot.emd(ot.unif(self.batch_size//2), ot.unif(self.batch_size//2), C)
-                # 更新 gamma 参数 (coupling in OT)
-                self.gamma = gamma
-                # 根据求得的 gamma 更新目标域的标签
-                # y1_update = np.zeros_like(y1)
-                # target_labels_index = np.argmax(self.gamma, axis=0)
-                # for i in range(len(target_labels_index)):
-                #     y1_update[i] = y0[target_labels_index[i]]
-                # # 固定 coupling 更新网络的参数
-                # X_batch = np.vstack([X0, X1])
-                # y_batch = np.hstack([y0, y1_update])
-                sess.run(self._train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, self.learning_rate:self.lr,
-                                                    self.gamma_tf:self.gamma, self._training:True})
+                if step < 0:
+                    X_batch, y_batch = next(gen_source_batch)
+                    sess.run(self._source_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
+                                                           self.learning_rate:self.lr, self._training:True})
+                else:
+                    # 学习率衰减
+                    if self.lr_decay and step % 10000 == 0 and step !=0:
+                        self.lr *= 0.1
+                    X0, y0 = next(gen_source_batch)
+                    X1, y1 = next(gen_target_batch)
+                    X_batch = np.vstack([X0, X1])
+                    y_batch = np.hstack([y0, y1])
+                    # 固定网络的参数，更新 coupling in OT
+                    C1, C0 = sess.run([self._target_loss, self._gdist], 
+                                       feed_dict={self.inputs:X_batch, self.labels:y_batch})
+                    C = (self.jdot_alpha * C0) + (C1 * self.jdot_lambda)
+                    # 优化 copuling
+                    gamma = ot.emd(ot.unif(self.batch_size//2), ot.unif(self.batch_size//2), C)
+                    # 更新 gamma 参数 (coupling in OT)
+                    self.gamma = gamma
+                    # # 根据求得的 gamma 更新目标域的标签
+                    # y1_update = np.zeros_like(y1)
+                    # target_labels_index = np.argmax(self.gamma, axis=0)
+                    # for i in range(len(target_labels_index)):
+                    #     y1_update[i] = y0[target_labels_index[i]]
+                    # X_batch = np.vstack([X0, X1])
+                    # y_batch = np.hstack([y0, y1_update])
+                    # 固定 coupling 更新网络的参数
+                    sess.run(self._train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, self.learning_rate:self.lr
+                                                        ,self.gamma_tf:self.gamma, self._training:True})
                 # 打印信息
                 if step % 50 == 0 and step != 0:
                     train_loss, train_acc = sess.run([self._pre_loss, self._label_acc], 
@@ -188,7 +186,6 @@ class DeepJDOT():
                     test_loss, test_acc = sess.run([self._pre_loss, self._label_acc], 
                                                       feed_dict={self.inputs:X_test, self.labels:y_test})
                     print("test loss: {:.4f}\t|  test accuracy: {:.2f}%".format(test_loss, test_acc*100))
-                    print(C1.sum(), C0.sum())
                     if test_acc >= best_acc:
                         best_acc = test_acc
                         self.save("./my_model/"+self._num_+"/train_model.ckpt")

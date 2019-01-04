@@ -111,7 +111,7 @@ if __name__ == "__main__":
                              dropout=dropout, batch_size=batch_size, in_channels=input_channels, train_ratio=0.5,
                              random_state=42)
             dann.fit(X=datas_train, y=train_labels, num_steps=351*52, X_test=datas_test, y_test=test_labels,
-                     outputs=n_outputs, people_num=windows, training_mode="dann")
+                     outputs=n_outputs, people_num=windows, training_mode="source")
 
             dann.restore()
             y_pred = dann.predict(datas_test)

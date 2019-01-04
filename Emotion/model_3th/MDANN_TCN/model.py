@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
 from read_data import read_data
 # from read_raw_data import read_data
-from deep_jdot import DeepJDOT
+from mdann import MDANNModel
 from sklearn.manifold import TSNE # 用于高维特征可视化
 from utils import plot_embedding
 
@@ -104,16 +104,17 @@ if __name__ == "__main__":
             dropout = 0.5
             num_channels = [128, 64, 32] # 有多少层，及每一层包含的神经元个数（这里的一层指一个 block）
             kernel_size = 3   # 卷积核大小  
-            batch_size = 128
+            batch_size = 4*32
 
-            # 开始构建 DeepJDOT 模型实例
-            deep_jdot = DeepJDOT(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels, 
-                                 dropout=dropout, batch_size=batch_size, in_channels=input_channels)
-            deep_jdot.fit(X=datas_train, y=train_labels, num_steps=15001, X_test=datas_test, y_test=test_labels,
-                          outputs=n_outputs, people_num=windows)
+            # 开始构建 DANN 模型实例
+            dann = MDANNModel(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels,
+                             dropout=dropout, batch_size=batch_size, in_channels=input_channels, train_ratio=0.5,
+                             random_state=42)
+            dann.fit(X=datas_train, y=train_labels, num_steps=205001, X_test=datas_test, y_test=test_labels,
+                     outputs=n_outputs, people_num=windows, training_mode="dann")
 
-            deep_jdot.restore()
-            y_pred = deep_jdot.predict(datas_test)
+            dann.restore()
+            y_pred = dann.predict(datas_test)
             total_acc_test = accuracy_score(test_labels, y_pred)
             y_pred_labels = list(y_pred)
             print("Test accuracy: {:.4f}%".format(total_acc_test*100))
@@ -121,15 +122,14 @@ if __name__ == "__main__":
             temp = total_acc_test
             accuracy_list.append(temp)
             # 下面是特征可视化
-            index = list(np.random.permutation(1664))[:400]
-            combined_test_data = np.vstack([datas_train[index], datas_test[:400]])
-            combined_test_labels = np.hstack([train_labels[index], test_labels[:400]])
-            combined_test_domain = np.hstack([np.tile([0], [400]), np.tile([1], [400])])
+            combined_test_data = np.vstack([datas_train[:100], datas_test[:100]])
+            combined_test_labels = np.hstack([train_labels[:100], test_labels[:100]])
+            combined_test_domain = np.hstack([np.tile([0], [100]), np.tile([1], [100])])
 
-            test_emd = deep_jdot._session.run(deep_jdot.feature, feed_dict={deep_jdot.inputs:combined_test_data})
+            test_emd = dann._session.run(dann.feature, feed_dict={dann.inputs:combined_test_data})
             tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=3000)
-            deep_jdot_tsne = tsne.fit_transform(test_emd)
-            plot_embedding(deep_jdot_tsne, combined_test_labels, combined_test_domain) 
+            dann_tsne = tsne.fit_transform(test_emd)
+            plot_embedding(dann_tsne, combined_test_labels, combined_test_domain) 
         print("-------------------------------accuracy_list--------------------------------------")
         print(accuracy_list)
         print("accuacy mean : ", sum(accuracy_list) / 5)
@@ -152,16 +152,8 @@ if __name__ == "__main__":
     np.save("./result/mv/valence/"+str(windows)+"/samples", samples_info_dic)
     print("accuracy: ")
     print(accuracy_results_dic)
-    sum_ = 0
-    for i in range(32):
-        sum_ += accuracy_results_dic[str(i)][-1]
-    print("acc: ", sum_/32)
     print("F1 score: ")
     print(F1_score_results_dic)
-    sum_ = 0
-    for i in range(32):
-        sum_ += F1_score_results_dic[str(i)][-1]
-    print("f1 acc: ", sum_/32)
     print("sample info")
     print(samples_info_dic)
 

@@ -7,10 +7,9 @@ import numpy as np
 from tcn import TCN
 from sklearn.exceptions import NotFittedError
 from gradient_reversal import gradient_reversal
-#from tensorflow.contrib.layers import batch_norm
-from utils import batch_generator, batch_generator_new
+from utils import batch_generator
 
-class DANNModel():
+class MDANNModel():
     def __init__(self, 
                  sequence_length, 
                  kernel_size, 
@@ -20,9 +19,7 @@ class DANNModel():
                  in_channels,
                  train_ratio=0.5,
                  random_state=None, 
-                 #optimizer_class1=tf.train.RMSPropOptimizer,
-                 optimizer_class2=tf.train.GradientDescentOptimizer,
-                 optimizer_class1=tf.train.AdamOptimizer):
+                 optimizer_class=tf.train.MomentumOptimizer):
         self.sequence_length = sequence_length
         self.kernel_size = kernel_size
         self.num_channels = num_channels
@@ -31,8 +28,7 @@ class DANNModel():
         self.in_channels = in_channels
         self.train_ratio = train_ratio
         self.random_state = random_state
-        self.optimizer_class1 = optimizer_class1
-        self.optimizer_class2 = optimizer_class2
+        self.optimizer_class = optimizer_class
         self._session = None
 
     def _build_model(self, n_outputs):
@@ -44,11 +40,9 @@ class DANNModel():
             np.random.seed(self.random_state)
         self.inputs = tf.placeholder(tf.float32, shape=(None, self.sequence_length, self.in_channels), name="inputs")
         self.labels = tf.placeholder(tf.int32, shape=(None), name="labels")
-        self.domain_labels = tf.placeholder(tf.float32, shape=(None, 1), name="domain_labels")
         self._training = tf.placeholder_with_default(False, shape=(), name="training")
         self.learning_rate = tf.placeholder(tf.float32, shape=(), name="learning_rate")
-        self.l = tf.placeholder(tf.float32, shape=(), name="l") # 用于梯度翻转层常数
-        # bn_params = {"is_training":self._training, 'decay':0.99, 'updates_collections':None}
+        self.num = tf.placeholder(tf.int32, shape=(), name="num")
         # TCN 模型用于提取特征
         with tf.variable_scope("feature_extractor"):
             # feature.shape = (samples, seq_length, features)
@@ -74,62 +68,41 @@ class DANNModel():
             # print("fes: ", self.feature.get_shape())
         # softmax 用于分类预测
         with tf.variable_scope("label_predictor"):
-            all_features = lambda: self.feature
-            source_features = lambda: tf.slice(self.feature, [0, 0], [int(self.batch_size*self.train_ratio), -1])
-            classify_features = tf.cond(self._training, source_features, all_features)
-
-            all_labels = lambda: self.labels
-            source_labels = lambda: tf.slice(self.labels, [0], [int(self.batch_size*self.train_ratio)])
-            self.classify_labels = tf.cond(self._training, source_labels, all_labels)
-
-            # p_temp_0 = tf.contrib.layers.fully_connected(classify_features, 20, activation_fn=tf.nn.relu)
-            all_logits = tf.contrib.layers.fully_connected(classify_features, n_outputs, activation_fn=None) 
-            logits = tf.cond(self._training, lambda:all_logits[:self.batch_size // 2], lambda:all_logits)
-            self.predictor = tf.nn.softmax(all_logits, name="predictor")
-            self.predictor_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.classify_labels, 
+            logits = tf.contrib.layers.fully_connected(self.feature, n_outputs, activation_fn=None) 
+            self.predictor = tf.nn.softmax(logits, name="predictor")
+            self.predictor_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.labels, 
                                                                                  logits=logits)
-            # 开始计算目标域和源域标签分布差异损失
-            self.S_T_label_loss = tf.losses.mean_squared_error(labels=tf.reduce_mean(self.predictor[0]), predictions=tf.reduce_mean(tf.nn.softmax(all_logits[self.batch_size//2:])[0])) + tf.losses.mean_squared_error(labels=tf.reduce_mean(self.predictor[1]), predictions=tf.reduce_mean(tf.nn.softmax(all_logits[self.batch_size//2:])[1])) 
-            self.S_T_feature_loss = tf.losses.mean_squared_error(labels=tf.reduce_mean(self.feature[:self.batch_size//2]), predictions=tf.reduce_mean(self.feature[self.batch_size//2:]))
-        # softmax 用于域判别器
-        with tf.variable_scope("domain_predictor"):
-            # 反向传播时候翻转梯度
-            feat = gradient_reversal(self.feature, self.l)
-            d_temp = tf.contrib.layers.fully_connected(feat, 30, activation_fn=tf.nn.relu, scope="d_temp")
-            # d_temp_0 = tf.contrib.layers.dropout(d_temp, 1-0.5, is_training=self._training)
-            d_logits = tf.contrib.layers.fully_connected(d_temp, 1, activation_fn=None, scope="d_logits")
-            self.domain_predictor = tf.sigmoid(d_logits, name="domain_pre")
-            # self.domain_loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=d_logits, labels=self.domain_labels)
-            self.domain_loss = tf.losses.log_loss(predictions=self.domain_predictor, labels=self.domain_labels)
-            # self.domain_loss = tf.losses.hinge_loss(logits=d_logits, labels=self.domain_labels)
+            self.feature_class_one = self.feature[:self.num]
+            dist1 = tf.reshape(tf.reduce_sum(tf.square(self.feature_class_one), axis=1), (-1, 1))
+            dist2 = dist1 + tf.reshape(tf.reduce_sum(tf.square(self.feature_class_one), axis=1), (1, -1))
+            self.domain_loss_one = dist2 - 2.0*tf.matmul(self.feature_class_one, tf.transpose(self.feature_class_one))
+        
+            self.feature_class_two = self.feature[self.num:]
+            dist1_ = tf.reshape(tf.reduce_sum(tf.square(self.feature_class_two), axis=1), (-1, 1))
+            dist2_ = dist1_ + tf.reshape(tf.reduce_sum(tf.square(self.feature_class_two), axis=1), (1, -1))
+            self.domain_loss_two = dist2_ - 2.0*tf.matmul(self.feature_class_two, tf.transpose(self.feature_class_two))
 
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
         # 构建损失节点
         pred_loss = tf.reduce_mean(self.predictor_loss)
-        domain_loss_ = tf.reduce_mean(self.domain_loss)
-        # total_loss = tf.add(pred_loss, domain_loss_)
-        total_loss = tf.add(tf.add(pred_loss, domain_loss_), self.S_T_label_loss * 0.1)
+        domain_loss_one = tf.reduce_mean(self.domain_loss_one)
+        domain_loss_two = tf.reduce_mean(self.domain_loss_two)
+        total_loss = pred_loss + (domain_loss_one + domain_loss_two)*10
         # 构建训练节点
-        pre_train_op = self.optimizer_class2(learning_rate=self.learning_rate).minimize(pred_loss)
-        dann_train_op = self.optimizer_class1(learning_rate=self.learning_rate).minimize(total_loss)
-        domain_train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, 
-                                         scope="domain_predictor/d_temp|domain_predictor/d_logits")
-        domain_train_op = self.optimizer_class1(learning_rate=self.learning_rate).minimize(domain_loss_) 
-                                                                                           #var_list=domain_train_vars)
+        pre_train_op = self.optimizer_class(self.learning_rate, 0.9).minimize(pred_loss)
+        dann_train_op = self.optimizer_class(self.learning_rate, 0.9).minimize(total_loss)
         # 构建评估节点
-        correct_label_predictor = tf.nn.in_top_k(self.predictor, self.classify_labels, 1)
+        correct_label_predictor = tf.nn.in_top_k(self.predictor, self.labels, 1)
         label_acc = tf.reduce_mean(tf.cast(correct_label_predictor, tf.float32))
-        correct_domain_predictor = tf.equal(self.domain_labels, tf.cast(tf.greater(self.domain_predictor, 0.5), tf.float32))
-        domain_acc = tf.reduce_mean(tf.cast(correct_domain_predictor, tf.float32))
         # 构建全局初始化节点
         init = tf.global_variables_initializer()
         # 构建模型保存节点
         saver = tf.train.Saver()
 
-        self._pred_loss, self._domain_loss, self._total_loss = pred_loss, domain_loss_, total_loss
-        self._regular_train_op, self._dann_train_op, self._domain_train_op = pre_train_op, dann_train_op, domain_train_op
-        self._label_acc, self._domain_acc = label_acc, domain_acc
+        self._pred_loss, self._total_loss = pred_loss, total_loss
+        self._regular_train_op, self._dann_train_op = pre_train_op, dann_train_op
+        self._label_acc = label_acc
         self._init, self._saver = init, saver
 
     def close_session(self):
@@ -158,65 +131,45 @@ class DANNModel():
         # 开始训练阶段
         best_acc = 0 # 测试集最好的准确率
         self._session = tf.Session(graph=self._graph)
-        epoch_count = 0
         with self._session.as_default() as sess:
             sess.run(self._init)
             # batch 生成器
-            gen_source_batch = batch_generator([X, y], int(self.batch_size*self.train_ratio))
-            gen_target_batch = batch_generator([np.vstack([X_test, X_test, X_test, X_test]), np.hstack([y_test, y_test, y_test, y_test])], self.batch_size-int(self.batch_size*self.train_ratio))
+            gen_batch = batch_generator([X, y], self.batch_size)
             gen_source_only_batch = batch_generator([X, y], self.batch_size)
-            # domain_label = np.vstack([np.tile([1, 0], [int(self.batch_size*self.train_ratio), 1]), 
-            #                           np.tile([0, 1], [self.batch_size-int(self.batch_size*self.train_ratio), 1])])
-            temp_list=[1]*int(self.batch_size*self.train_ratio)+[0]*(self.batch_size-int(self.batch_size*self.train_ratio))
-            domain_label = np.array(temp_list).reshape(-1, 1)
-            gen_batch = batch_generator_new([X, y, X_test, y_test], self.batch_size)
             for step in range(num_steps):
                 p = float(step) / num_steps
-                l = 2. / (1. + np.exp(-10*p)) - 1
-                lr = 0.01 / (1 + 10 * p)**0.75
+                lr = 0.001 / (1 + 10 * p)**0.75
                 
                 if training_mode == "dann":
-                    X0, y0 = next(gen_source_batch)
-                    X1, y1 = next(gen_target_batch)
-                    X_batch = np.vstack([X0, X1])
-                    y_batch = np.hstack([y0, y1])
-                    # X_batch, y_batch = next(gen_batch)
+                    X_batch, y_batch, num_0 = next(gen_batch)
                     assert(y_batch.shape==(self.batch_size,))
                     assert(X_batch.shape==(self.batch_size, self.sequence_length, self.in_channels))
                     sess.run(self._dann_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
-                                                             self.domain_labels:domain_label, self._training:True, 
-                                                             self.l:l, self.learning_rate:lr})
+                                                             self._training:True, 
+                                                             self.learning_rate:lr, self.num:num_0})
                     # print info
-                    if step % (len(y)//(self.batch_size*self.train_ratio)) == 0 and step != 0:
-                        epoch_count += 1
-                        train_pred_total_loss, train_pred_acc = sess.run([self._pred_loss, self._label_acc], 
-                                                                          feed_dict={self.inputs:X, self.labels:y})
-                        domain_loss, domain_acc, p = sess.run([self._domain_loss, self._domain_acc, 
-                                                               self.domain_predictor], 
-                                                               feed_dict={self.inputs:X_batch, self.labels:y_batch, 
-                                                               self.domain_labels:domain_label})
-                        print("{}\ttraining loss: {:.4f}\t|  trainning accuracy: {:.2f}%".format(epoch_count, 
+                    if step % 50 == 0 and step != 0:
+                        train_pred_total_loss, train_pred_acc, loss= sess.run([self._pred_loss, self._label_acc, self._total_loss], 
+                                                                          feed_dict={self.inputs:X, self.labels:y, self.num:num_0})
+                        print("{}\ttraining loss: {:.4f}\t|  trainning accuracy: {:.2f}%".format(step, 
                               train_pred_total_loss, train_pred_acc*100))
-                        print(p[-10:])
-                        print("domain loss: {:.2f}\t|  domain accuracy: {:.2f}%".format(domain_loss, domain_acc*100))
+                        print("total loss: {:.4f}".format(loss))
+                        print("domain loss: {:.4f}".format(loss-train_pred_total_loss))
                         test_pred_total_loss, test_pred_acc = sess.run([self._pred_loss, self._label_acc], 
-                                                                       feed_dict={self.inputs:X_test, 
-                                                                                  self.labels:y_test})
+                                                                        feed_dict={self.inputs:X_test, self.labels:y_test})
                         if test_pred_acc >= best_acc:
                             best_acc = test_pred_acc
                             self.save("./my_model/"+self._num_+"/train_model.ckpt")
-                        print("test loss: {:.4f}\t|  test accuracy: {:.2f}%".format(test_pred_total_loss, 
-                                                                                    test_pred_acc*100))
+                        print("test loss: {:.4f}\t|  test accuracy: {:.2f}%".format(test_pred_total_loss, test_pred_acc*100))
                 if training_mode == "source":
-                    X_batch, y_batch = next(gen_source_only_batch)
+                    X_batch, y_batch, _ = next(gen_source_only_batch)
                     sess.run(self._regular_train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, 
                                                                 self.learning_rate:lr})
                     # print info
-                    if step % (len(y)//(self.batch_size)) == 0 and step != 0:
-                        epoch_count += 1
+                    if step % 50 == 0 and step != 0:
                         train_pred_total_loss, train_pred_acc = sess.run([self._pred_loss, self._label_acc], 
                                                                           feed_dict={self.inputs:X, self.labels:y})
-                        print("{}\ttraining loss: {:.4f}\t|  trainning accuracy: {:.2f}%".format(epoch_count, 
+                        print("{}\ttraining loss: {:.4f}\t|  trainning accuracy: {:.2f}%".format(step, 
                               train_pred_total_loss, train_pred_acc*100))
                         test_pred_total_loss, test_pred_acc = sess.run([self._pred_loss, self._label_acc], 
                                                                        feed_dict={self.inputs:X_test, 
