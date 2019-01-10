@@ -104,7 +104,7 @@ if __name__ == "__main__":
             dropout = 0.5
             num_channels = [128, 64, 32] # 有多少层，及每一层包含的神经元个数（这里的一层指一个 block）
             kernel_size = 3   # 卷积核大小  
-            batch_size = 128
+            batch_size = 3328
 
             # 开始构建 DeepJDOT 模型实例
             deep_jdot = DeepJDOT(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels, 

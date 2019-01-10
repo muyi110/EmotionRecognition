@@ -68,22 +68,19 @@ class DeepJDOT():
             # 评估模型的时候用到的损失
             self.pre_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, 
                                                                                           labels=self.labels))
-            # # 下面开始计算目标域损失(cross-entropy loss)
-            # target_predictor = tf.slice(self.predictor, [self.batch_size//2, 0], [self.batch_size//2, -1])
-            # # 将预测的概率转为对应的类别标签, 并转为 one-hot 编码形式
-            # target_pre_labels_one_hot = tf.one_hot(tf.argmax(target_predictor, axis=1), 2)
-            # target_predictor = tf.log(target_pre_labels_one_hot+1e-10)
-            # source_labels_one_hot = tf.one_hot(source_labels, 2)
-            # target_loss = tf.multiply(tf.matmul(source_labels_one_hot, tf.transpose(target_predictor)), -1)
-            # self.target_loss = tf.reduce_sum(tf.multiply((self.gamma_tf * target_loss), self.jdot_lambda))
-            # 下面开始计算目标损失(hinge loss)
+            # 下面开始计算目标域损失(cross-entropy loss)
             target_predictor = tf.slice(self.predictor, [self.batch_size//2, 0], [self.batch_size//2, -1])
-            # 将预测的概率转为对应的类别标签
-            target_pre_labels = tf.argmax(target_predictor, axis=1)
-            target_predictor = tf.cast(tf.reshape(target_pre_labels, (1, -1)) * 2 - 1, tf.int32)
-            source_labels = tf.cast(tf.reshape(source_labels, (-1, 1)) * 2 -1, tf.int32)
-            target_loss = tf.cast(tf.maximum(0, 1-tf.matmul(source_labels, target_predictor)), tf.float32)
+            source_labels_one_hot = tf.one_hot(source_labels, 2)
+            target_loss = tf.multiply(tf.matmul(source_labels_one_hot, tf.transpose(target_predictor)), -1)
             self.target_loss = tf.reduce_sum(tf.multiply((self.gamma_tf * target_loss), self.jdot_lambda))
+            # # 下面开始计算目标损失(hinge loss)
+            # target_predictor = tf.slice(self.predictor, [self.batch_size//2, 0], [self.batch_size//2, -1])
+            # # 将预测的概率转为对应的类别标签
+            # target_pre_labels = tf.argmax(target_predictor, axis=1)
+            # target_predictor = tf.cast(tf.reshape(target_pre_labels, (1, -1)) * 2 - 1, tf.int32)
+            # source_labels = tf.cast(tf.reshape(source_labels, (-1, 1)) * 2 -1, tf.int32)
+            # target_loss = tf.cast(tf.maximum(0, 1-tf.matmul(source_labels, target_predictor)), tf.float32)
+            # self.target_loss = tf.reduce_sum(tf.multiply((self.gamma_tf * target_loss), self.jdot_lambda))
             # 下面开始计算特征损失(feature allignment loss)
             gs = tf.slice(self.feature, [0, 0], [self.batch_size//2, -1]) # 源域的特征
             gt = tf.slice(self.feature, [self.batch_size//2, 0], [self.batch_size//2, -1]) # 目标域的特征
@@ -97,10 +94,16 @@ class DeepJDOT():
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
         # 构建损失节点
-        total_loss = self.target_loss + self.allign_loss + self.source_loss
+        total_loss = self.target_loss + self.allign_loss + self.source_loss*2.0
+        c_loss = self.target_loss*2 + self.source_loss*1.0
+        f_loss = self.allign_loss
         pre_loss = self.pre_loss
         # 构建训练节点
-        train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(total_loss)
+        train_vars_f = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="feature_extractor")
+        train_vars_c = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="label_predictor")
+        train_op = self.optimizer_class(self.learning_rate).minimize(total_loss, var_list=train_vars_c+train_vars_f)
+        train_op_c = self.optimizer_class(self.learning_rate).minimize(c_loss, var_list=train_vars_c+train_vars_f)
+        train_op_f = self.optimizer_class(self.learning_rate).minimize(f_loss, var_list=train_vars_f)
         source_train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(pre_loss)
         # 构建评估节点
         correct_label_predictor = tf.nn.in_top_k(self.predictor, self.labels, 1)
@@ -112,6 +115,7 @@ class DeepJDOT():
 
         self._pre_loss, self._train_op, self._label_acc, self._total_loss = pre_loss, train_op, label_acc, total_loss
         self._source_train_op = source_train_op
+        self._train_op_c, self._train_op_f = train_op_c, train_op_f
         self._init, self._saver = init, saver
     
     def close_session(self):
@@ -167,16 +171,15 @@ class DeepJDOT():
                     gamma = ot.emd(ot.unif(self.batch_size//2), ot.unif(self.batch_size//2), C)
                     # 更新 gamma 参数 (coupling in OT)
                     self.gamma = gamma
-                    # # 根据求得的 gamma 更新目标域的标签
-                    # y1_update = np.zeros_like(y1)
-                    # target_labels_index = np.argmax(self.gamma, axis=0)
-                    # for i in range(len(target_labels_index)):
-                    #     y1_update[i] = y0[target_labels_index[i]]
-                    # X_batch = np.vstack([X0, X1])
-                    # y_batch = np.hstack([y0, y1_update])
                     # 固定 coupling 更新网络的参数
-                    sess.run(self._train_op, feed_dict={self.inputs:X_batch, self.labels:y_batch, self.learning_rate:self.lr
-                                                        ,self.gamma_tf:self.gamma, self._training:True})
+                    sess.run([self._train_op_c], feed_dict={self.inputs:X_batch, self.labels:y_batch, 
+                                                            self.learning_rate:self.lr,
+                                                            self.gamma_tf:self.gamma, 
+                                                            self._training:True})
+                    #sess.run([self._train_op_f], feed_dict={self.inputs:X_batch, self.labels:y_batch, 
+                    #                                        self.learning_rate:self.lr,
+                    #                                        self.gamma_tf:self.gamma, 
+                    #                                        self._training:True})
                 # 打印信息
                 if step % 50 == 0 and step != 0:
                     train_loss, train_acc = sess.run([self._pre_loss, self._label_acc], 

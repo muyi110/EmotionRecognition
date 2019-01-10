@@ -1,0 +1,3 @@
+model_checkpoint_path: "pre_train_params.ckpt"
+all_model_checkpoint_paths: "../my_model/9/train_model.ckpt"
+all_model_checkpoint_paths: "pre_train_params.ckpt"
