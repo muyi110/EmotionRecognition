@@ -2,10 +2,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+def test_for_train_samples(X_test, y_test):
+    assert(y_test[:52].sum() == 0 or y_test[:52].sum() == 1)
+    a = np.random.permutation(52)[:13]
+    samples_select_list = []
+    for i in range(8):
+        samples_select_list += list(a + 52*i)
+    samples_select_array = np.array(samples_select_list)
+    assert(samples_select_array.shape == (104,))
+    samples_select_X = X_test[samples_select_array]
+    samples_select_y = y_test[samples_select_array]
+    return samples_select_X, samples_select_y
+
 def batch_generator(X, y, X_test, y_test, batch_size, seed):
-    assert(X.shape[0] == X_test.shape[0]*4)
-    X_test = np.vstack([X_test, X_test, X_test, X_test])
-    y_test = np.hstack([y_test, y_test, y_test, y_test])
+    per = list(np.random.permutation(X_test.shape[0]))
+    X_test = X_test[per[:]]
+    y_test = y_test[per[:]]
+    assert(X.shape[0] == X_test.shape[0]*16)
+    X_test = np.vstack([X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test, X_test])
+    y_test = np.hstack([y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test, y_test])
     assert(len(y) == len(y_test))
     np.random.seed(seed)
     num = X.shape[0]

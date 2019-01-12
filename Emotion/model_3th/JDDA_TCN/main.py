@@ -66,7 +66,7 @@ def split_datas_with_cross_validation(datas, labels, windows, seed=None):
     return datas_train, labels_train, datas_test, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(0, 32))
+    people_num_list = list(range(1, 32))
     windows = 9               # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
@@ -149,8 +149,16 @@ if __name__ == "__main__":
     np.save("./result/mv/valence/"+str(windows)+"/samples", samples_info_dic)
     print("accuracy: ")
     print(accuracy_results_dic)
+    sum_ = 0
+    for i in range(32):
+        sum_ += accuracy_results_dic[str(i)][-1]
+    print("acc: ", sum_/32)
     print("F1 score: ")
     print(F1_score_results_dic)
+    sum_ = 0
+    for i in range(32):
+        sum_ += F1_score_results_dic[str(i)][-1]
+    print("f1 acc: ", sum_/32)
     print("sample info")
     print(samples_info_dic)
 

@@ -6,8 +6,9 @@ import tensorflow as tf
 import numpy as np
 from tcn import TCN_Model
 from sklearn.exceptions import NotFittedError
-from utils import batch_generator
+from utils import batch_generator, test_for_train_samples
 from discriminative_loss import get_center_loss
+from associative_loss import associative_loss
 
 class JDDA_Model():
     def __init__(self, 
@@ -18,8 +19,8 @@ class JDDA_Model():
                  batch_size,
                  in_channels,
                  random_state=None, 
-                 domain_loss_param = 8,
-                 discrimative_loss_param = 0.00001,
+                 domain_loss_param = 20,
+                 discrimative_loss_param = 0.0,
                  optimizer_class=tf.train.AdamOptimizer):
         self.sequence_length = sequence_length
         self.kernel_size = kernel_size
@@ -103,11 +104,15 @@ class JDDA_Model():
             domain_loss_x = tf.reduce_sum(tf.square(diff_x)) # 边缘分布距离度量
 
             source_diff = tf.unsorted_segment_mean(D_s, self.labels, 2)
-            target_diff = tf.unsorted_segment_mean(D_t, tf.argmax(self.target_model.softmax_output, axis=1), 2)
-            #target_diff = tf.unsorted_segment_mean(D_t, self.labels_tt, 2)
+            #target_diff = tf.unsorted_segment_mean(D_t, tf.argmax(self.target_model.softmax_output, axis=1), 2)
+            target_diff = tf.unsorted_segment_mean(D_t, self.labels_tt, 2)
             domain_loss_y = tf.reduce_sum(tf.square(source_diff - target_diff)) # 条件分布距离度量
             domain_loss = domain_loss_x + domain_loss_y
             return domain_loss
+        if method == "Associative":
+            D_s = self.source_model.feature
+            D_t = self.target_model.feature
+            return associative_loss(D_s, D_t, self.labels_s, 1.0, 0.2)
 
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
@@ -162,13 +167,14 @@ class JDDA_Model():
         self._session = tf.Session(graph=self._graph)
         with self._session.as_default() as sess:
             sess.run(self._init)
+            X_test_train, y_test_train = test_for_train_samples(X_test, y_test)
             for epoch in range(epochs):
                 lr = 0.001
                 seed += 1
-                gen_batch = batch_generator(X, y, X_test, y_test, self.batch_size, seed)
+                gen_batch = batch_generator(X, y, X_test_train, y_test_train, self.batch_size, seed)
                 for batch in gen_batch:
                     X_batch_s, y_batch_s, X_batch_t, y_batch_t = batch
-                    if epoch <= 80:
+                    if epoch <= -1:
                         sess.run(self.train_op_source_only, feed_dict={self.inputs_s:X_batch_s, self.labels_s:y_batch_s,
                                                                        self.learning_rate:lr, self._training:True})
                     else:
