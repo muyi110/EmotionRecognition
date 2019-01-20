@@ -19,8 +19,8 @@ class JDDA_Model():
                  batch_size,
                  in_channels,
                  random_state=None, 
-                 domain_loss_param = 20,
-                 discrimative_loss_param = 0.0,
+                 domain_loss_param = 8,
+                 discrimative_loss_param = 0.0001,
                  optimizer_class=tf.train.AdamOptimizer):
         self.sequence_length = sequence_length
         self.kernel_size = kernel_size
@@ -50,6 +50,7 @@ class JDDA_Model():
         self.labels_t = tf.placeholder(tf.int32, shape=(None), name="labels_t")
         self._training = tf.placeholder_with_default(False, shape=(), name="training")
         self.learning_rate = tf.placeholder(tf.float32, shape=(), name="learning_rate")
+        self.mu = tf.placeholder(tf.float32, shape=(), name="mu") # 边缘对齐和条件对齐权衡系数
 
         self.source_model = TCN_Model(self.inputs_s, n_outputs, self.num_channels, self.sequence_length, 
                                       self.kernel_size, self.dropout, is_training=self._training)
@@ -107,12 +108,12 @@ class JDDA_Model():
             #target_diff = tf.unsorted_segment_mean(D_t, tf.argmax(self.target_model.softmax_output, axis=1), 2)
             target_diff = tf.unsorted_segment_mean(D_t, self.labels_tt, 2)
             domain_loss_y = tf.reduce_sum(tf.square(source_diff - target_diff)) # 条件分布距离度量
-            domain_loss = domain_loss_x + domain_loss_y
+            domain_loss = domain_loss_x*(1-self.mu) + domain_loss_y*self.mu
             return domain_loss
         if method == "Associative":
             D_s = self.source_model.feature
             D_t = self.target_model.feature
-            return associative_loss(D_s, D_t, self.labels_s, 1.0, 0.2)
+            return associative_loss(D_s, D_t, self.labels_s, 0.1, 0.1)
 
     def _build_graph(self, n_outputs):
         self._build_model(n_outputs)
@@ -167,11 +168,14 @@ class JDDA_Model():
         self._session = tf.Session(graph=self._graph)
         with self._session.as_default() as sess:
             sess.run(self._init)
-            X_test_train, y_test_train = test_for_train_samples(X_test, y_test)
+            #X_test_train, y_test_train = test_for_train_samples(X_test, y_test)
             for epoch in range(epochs):
                 lr = 0.001
+                p = float(epoch)/epochs
+                #mu = 2./(1+np.exp(-3*p)) - 1.
+                mu = 0.8
                 seed += 1
-                gen_batch = batch_generator(X, y, X_test_train, y_test_train, self.batch_size, seed)
+                gen_batch = batch_generator(X, y, X_test, y_test, self.batch_size, seed)
                 for batch in gen_batch:
                     X_batch_s, y_batch_s, X_batch_t, y_batch_t = batch
                     if epoch <= -1:
@@ -181,7 +185,7 @@ class JDDA_Model():
                         sess.run(self.train_op, feed_dict={self.inputs_s:X_batch_s, self.labels_s:y_batch_s, 
                                                            self.labels:y_batch_s, self.labels_tt:y_batch_t,
                                                            self.inputs_t:X_batch_t, self.labels_t:y_batch_t,
-                                                           self.learning_rate:lr, self._training:True})
+                                                           self.learning_rate:lr, self._training:True, self.mu:mu})
                 # 打印消息
                 if epoch % 1 == 0:
                     total_loss, source_loss, domain_loss, intra_loss, inter_loss, train_acc = sess.run([self.loss, 
@@ -189,7 +193,8 @@ class JDDA_Model():
                                                        self.inter_loss, self.s_predictor], 
                                                        feed_dict={self.inputs_s:X_batch_s, self.labels_s:y_batch_s, 
                                                                   self.labels:y_batch_s, self.labels_tt:y_batch_t,
-                                                                  self.inputs_t:X_batch_t, self.labels_t:y_batch_t})
+                                                                  self.inputs_t:X_batch_t, self.labels_t:y_batch_t,
+                                                                  self.mu:mu})
                     print("{}  Training total_loss: {:.4f}  source_loss: {:.4f}  domain_loss: {:.6f}  intra_loss: {:.4f}  inter_loss: {:.4f}".format(epoch, total_loss, source_loss, domain_loss, intra_loss, inter_loss))
                     print("training accuracy: {:.2f}%".format(train_acc*100))
 

@@ -16,7 +16,7 @@ class MCD_DA_Model():
                  dropout,
                  batch_size,
                  in_channels,
-                 num_k = 1,
+                 num_k = 20,
                  random_state=None, 
                  optimizer_class=tf.train.AdamOptimizer):
         self.sequence_length = sequence_length

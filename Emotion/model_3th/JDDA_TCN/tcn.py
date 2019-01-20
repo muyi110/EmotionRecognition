@@ -142,8 +142,10 @@ class TCN_Model():
         with tf.variable_scope(self.scope, reuse=self.reuse):
            features = TCN(self.input_layer, self.output_size, self.num_channels, self.sequence_length, 
                           self.kernel_size, self.dropout, self.is_training)
-           # self.feature = features[:, -1, :]
-           self.feature = tf.contrib.layers.fully_connected(features[:, -1, :], 32, activation_fn=tf.nn.relu)
-           self.logits = tf.contrib.layers.fully_connected(self.feature, self.output_size, activation_fn=None)
+           self.feature = features[:, -1, :]
+           #self.feature = tf.contrib.layers.fully_connected(features[:, -1, :], 32, 
+           #                                                 activation_fn=tf.nn.relu, scope="feature")
+           self.logits = tf.contrib.layers.fully_connected(self.feature, self.output_size, 
+                                                           activation_fn=None, scope="logits")
            self.softmax_output = tf.nn.softmax(self.logits)
 

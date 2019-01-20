@@ -66,7 +66,7 @@ def split_datas_with_cross_validation(datas, labels, windows, seed=None):
     return datas_train, labels_train, datas_test, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(1, 32))
+    people_num_list = list(range(0, 32))
     windows = 9               # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
@@ -106,7 +106,7 @@ if __name__ == "__main__":
             # 开始构建 DANN 模型实例
             dann = JDDA_Model(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels,
                                 dropout=dropout, batch_size=batch_size, in_channels=input_channels, random_state=42)
-            dann.fit(X=datas_train, y=train_labels, epochs=351, X_test=datas_test, y_test=test_labels,
+            dann.fit(X=datas_train, y=train_labels, epochs=451, X_test=datas_test, y_test=test_labels,
                      outputs=n_outputs, people_num=windows)
 
             dann.restore()
@@ -118,10 +118,10 @@ if __name__ == "__main__":
             temp = total_acc_test
             accuracy_list.append(temp)
             # 下面是特征可视化
-            index = list(np.random.permutation(1664))[:400]
-            combined_test_data = np.vstack([datas_train[index], datas_test[:400]])
-            combined_test_labels = np.hstack([train_labels[index], test_labels[:400]])
-            combined_test_domain = np.hstack([np.tile([0], [400]), np.tile([1], [400])])
+            index = list(np.random.permutation(1664))[:]
+            combined_test_data = np.vstack([datas_train[index], datas_test[:]])
+            combined_test_labels = np.hstack([train_labels[index], test_labels[:]])
+            combined_test_domain = np.hstack([np.tile([0], [1664]), np.tile([1], [416])])
 
             test_emd = dann._session.run(dann.target_model.feature, feed_dict={dann.inputs_t:combined_test_data})
             tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=3000)
