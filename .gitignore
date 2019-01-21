@@ -5,3 +5,6 @@ Emotion/model_1th/new_RNN/data1.mat
 model
 PythonLibrary
 sleep_eeg_analysis/pyarithmetic
+GAN/keras_DCGAN/images
+GAN/tf_GAN/data
+GAN/tf_GAN/out

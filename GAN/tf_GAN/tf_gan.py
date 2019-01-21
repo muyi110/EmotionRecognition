@@ -103,7 +103,7 @@ if not os.path.exists('out/'):
     os.makedirs("out/")
 
 i = 0
-for it in range(20000):
+for it in range(200001):
     if it % 2000 == 0:
         samples = sess.run(G_sample, feed_dict={Z:sample_Z(16, Z_dim)})
         fig = plot(samples)
