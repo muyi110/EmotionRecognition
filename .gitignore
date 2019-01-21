@@ -6,5 +6,6 @@ model
 PythonLibrary
 sleep_eeg_analysis/pyarithmetic
 GAN/keras_DCGAN/images
+GAN/keras_DCGAN/training_checkpoints
 GAN/tf_GAN/data
 GAN/tf_GAN/out
