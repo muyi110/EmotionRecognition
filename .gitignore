@@ -9,3 +9,8 @@ GAN/keras_DCGAN/images
 GAN/keras_DCGAN/training_checkpoints
 GAN/tf_GAN/data
 GAN/tf_GAN/out
+GAN/tf_DCGAN/checkpoint
+GAN/tf_DCGAN/data
+GAN/tf_DCGAN/logs
+GAN/tf_DCGAN/samples
+GAN/tf_DCGAN/__pycache__
