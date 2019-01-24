@@ -23,17 +23,17 @@ class DCGAN():
         self.sess = sess
         self.input_height = input_height
         self.input_width = input_width
-        self.crop = crop
+        self.crop = crop       # 训练过程为 true; 测试过程为 false
         self.batch_size = batch_size
         self.sample_num=sample_num
         self.output_height=output_height
         self.output_width=output_width
-        self.y_dim = y_dim
-        self.z_dim = z_dim
-        self.gf_dim = gf_dim
-        self.df_dim = df_dim # 判别器第一个卷积层输出维度
-        self.gfc_dim = gfc_dim
-        self.dfc_dim = dfc_dim
+        self.y_dim = y_dim     # 类别个数(用于 mnist )
+        self.z_dim = z_dim     # 生成器的输入维度(满足某一分布的随机噪声)
+        self.gf_dim = gf_dim   # 生成器输出的前一个转置卷积层的输出维度(滤波器个数)
+        self.df_dim = df_dim   # 判别器第一个卷积层输出维度(滤波器个数)
+        self.gfc_dim = gfc_dim # 生成器全连接层的神经元个数(用于 mnist )
+        self.dfc_dim = dfc_dim # 判别器全连接层的神经元个数(用于 mnist )
 
         # batch normalization
         self.d_bn1 = batch_norm(name="d_bn1")
@@ -68,7 +68,7 @@ class DCGAN():
                 self.c_dim = 1
             if len(self.data) < self.batch_size:
                 raise Exception("Entire dataset size is less than the configured batch_size")
-        self.grayscale = (self.c_dim == 1)
+        self.grayscale = (self.c_dim == 1)  # 判断是否是灰度图
         self.build_model()
 
     def discriminator(self, image, y=None, reuse=False):
@@ -327,7 +327,7 @@ class DCGAN():
     def load_mnist(self):
         data_dir = os.path.join(self.data_dir, self.dataset_name)
         fd = open(os.path.join(data_dir, 'train-images-idx3-ubyte'))
-        loaded = np.fromfile(file=fd, dtype=np.uint8)
+        loaded = np.fromfile(file=fd, dtype=np.uint8)  # 从指定的文件中读取数据，返回一个数组
         trX = loaded[16:].reshape((60000, 28, 28, 1)).astype(np.float)
 
         fd = open(os.path.join(data_dir, 'train-labels-idx1-ubyte'))
@@ -352,7 +352,8 @@ class DCGAN():
         np.random.shuffle(X)
         np.random.seed(seed)
         np.random.shuffle(y)
-          
+        
+        # 将 labels 转为 one-hot 编码  
         y_vec = np.zeros((len(y), self.y_dim), dtype=np.float)
         for i, label in enumerate(y):
             y_vec[i, y[i]] = 1.0
