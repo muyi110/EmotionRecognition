@@ -14,3 +14,5 @@ GAN/tf_DCGAN/data
 GAN/tf_DCGAN/logs
 GAN/tf_DCGAN/samples
 GAN/tf_DCGAN/__pycache__
+GAN/tf_conditional_GAN/log_cgan
+GAN/tf_conditional_GAN/MNIST_data
