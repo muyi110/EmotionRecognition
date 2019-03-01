@@ -104,10 +104,10 @@ class JDDA_Model():
             diff_x = tf.reduce_mean(D_s, axis=0) - tf.reduce_mean(D_t, axis=0)
             domain_loss_x = tf.reduce_sum(tf.square(diff_x)) # 边缘分布距离度量
 
-            #source_diff = tf.unsorted_segment_mean(D_s, self.labels, 2)
-            source_diff = tf.unsorted_segment_mean(D_s, tf.argmax(self.source_model.softmax_output, axis=1), 2)
-            target_diff = tf.unsorted_segment_mean(D_t, tf.argmax(self.target_model.softmax_output, axis=1), 2)
-            #target_diff = tf.unsorted_segment_mean(D_t, self.labels_tt, 2)
+            source_diff = tf.unsorted_segment_mean(D_s, self.labels, 2)
+            #source_diff = tf.unsorted_segment_mean(D_s, tf.argmax(self.source_model.softmax_output, axis=1), 2)
+            #target_diff = tf.unsorted_segment_mean(D_t, tf.argmax(self.target_model.softmax_output, axis=1), 2)
+            target_diff = tf.unsorted_segment_mean(D_t, self.labels_tt, 2)
             domain_loss_y = tf.reduce_sum(tf.square(source_diff - target_diff)) # 条件分布距离度量
             domain_loss = domain_loss_x*0.4 + domain_loss_y*0.6
             return domain_loss

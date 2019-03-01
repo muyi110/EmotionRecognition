@@ -66,7 +66,7 @@ def split_datas_with_cross_validation(datas, labels, windows, seed=None):
     return datas_train, labels_train, datas_test, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(0, 32))
+    people_num_list = list(range(1, 32))
     windows = 9               # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
@@ -106,7 +106,7 @@ if __name__ == "__main__":
             # 开始构建 DANN 模型实例
             dann = JDDA_Model(sequence_length=seq_length, kernel_size=kernel_size, num_channels=num_channels,
                                 dropout=dropout, batch_size=batch_size, in_channels=input_channels, random_state=42)
-            dann.fit(X=datas_train, y=train_labels, epochs=451, X_test=datas_test, y_test=test_labels,
+            dann.fit(X=datas_train, y=train_labels, epochs=351, X_test=datas_test, y_test=test_labels,
                      outputs=n_outputs, people_num=windows)
 
             dann.restore()
