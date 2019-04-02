@@ -268,7 +268,7 @@ def split_datas_with_cross_validatioan_random(datas, labels, windows, seed=None)
     return datas_train, labels_train, datas_test, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(0, 32))
+    people_num_list = list(range(2, 32))
     windows = 9 # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
@@ -312,7 +312,7 @@ if __name__ == "__main__":
             tcn = TCNClassifier(num_channels=num_channels, sequence_length = seq_length, kernel_size=kernel_size, 
                                 dropout=dropout, batch_size=batch_size, in_channels=input_channels, 
                                 random_state=42, learning_rate=learning_rate)
-            tcn.fit(X=datas_train, y=train_labels, n_epochs=101, X_test=datas_test, y_test=test_labels, 
+            tcn.fit(X=datas_train, y=train_labels, n_epochs=351, X_test=datas_test, y_test=test_labels,
                     people_num_=windows)
             tcn.restore()
             total_acc_test = 0
@@ -345,9 +345,9 @@ if __name__ == "__main__":
         F1_score_results_dic[str(people_num_)] = F1_scores_list + \
                                               [min(F1_scores_list), max(F1_scores_list), sum(F1_scores_list)/5]
         samples_info_dic[str(people_num_)] = samples_info
-    np.save("./result/mv_new/valence/"+str(windows)+"/accuracy_2_blocks", accuracy_results_dic)
-    np.save("./result/mv_new/valence/"+str(windows)+"/F1_score_2_blocks", F1_score_results_dic)
-    np.save("./result/mv_new/valence/"+str(windows)+"/samples_2_blocks", samples_info_dic)
+    np.save("./result/mv_new/valence/"+str(windows)+"/accuracy_20190326", accuracy_results_dic)
+    np.save("./result/mv_new/valence/"+str(windows)+"/F1_score_20190326", F1_score_results_dic)
+    np.save("./result/mv_new/valence/"+str(windows)+"/samples_2_20190326", samples_info_dic)
     print("accuracy: ")
     print(accuracy_results_dic)
     print("F1 score: ")

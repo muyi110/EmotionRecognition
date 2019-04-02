@@ -20,7 +20,6 @@ def _get_samples_data(people_list, trial_list, path, classify_object_name=0):
     labels_dic = {}
     labels_dic['0'] = valence_list
     labels_dic['1'] = arousal_list
-    
     samples_dirs = os.listdir(path) # 目录的顺序是随机的
     samples_dirs = sorted(samples_dirs)
     file_path = [os.path.join(path, samples_dirs[i]) for i in range(len(samples_dirs))]
@@ -75,7 +74,7 @@ def read_data(people_list, trial_list, path=SAMPLES_PATH, classify_object_name=0
         datas_result.append(np.c_[tuple(data_list)]) # 每一个元素 shape=(features, seq_length)=(128, 60)
     del datas
     assert len(datas_result) == len(labels)
-    _save_samples(datas_result, labels, people_list, classify_object_name)
+    #_save_samples(datas_result, labels, people_list, classify_object_name)
     return (datas_result, labels)
 
 def _save_samples(datas_result, labels, people_list, classify_object_name):

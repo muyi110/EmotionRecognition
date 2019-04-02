@@ -19,9 +19,13 @@ def get_data(people_list, trial_list, path=SAMPLES_PATH, classify_object_name=0)
     labels_dic = {}
     labels_dic['0'] = valence_list
     labels_dic['1'] = arousal_list
-    
-    samples_dirs = os.listdir(path) # 目录的顺序是随机的
-    samples_dirs = sorted(samples_dirs)
+    #samples_dirs = os.listdir(path) # 目录的顺序是随机的
+    #samples_dirs = sorted(samples_dirs)
+    #print(samples_dirs)
+    samples_dirs = ['s01', 's02', 's11', 's12', 's13', 's14', 's15', 's16', 's17', 's18', 's19', 's20',
+                    's03', 's21', 's22', 's23', 's24', 's25', 's26', 's27', 's28', 's29', 's30', 's04', 
+                    's31', 's32', 's05', 's06', 's07', 's08', 's09', 's10']
+    #print(samples_dirs)
     file_path = [os.path.join(path, samples_dirs[i]) for i in range(len(samples_dirs))]
     datas = [] # 获取最终的样本
     labels = [] # 对应的样本
@@ -33,9 +37,9 @@ def get_data(people_list, trial_list, path=SAMPLES_PATH, classify_object_name=0)
             label_value = np.loadtxt(file_path[people]+"/label.csv", delimiter=",", skiprows=0,
                                      dtype=np.float32)[trial, :2]
             # label_value[0]-->valence, label_value[1]-->arousal
-            if label_value[classify_object_name] >= labels_dic[str(classify_object_name)][people]:
+            if label_value[classify_object_name] >= labels_dic[str(classify_object_name)][int(file_path[people][-2:])-1]:
                 label = 0
-            elif label_value[classify_object_name] < labels_dic[str(classify_object_name)][people]:
+            elif label_value[classify_object_name] < labels_dic[str(classify_object_name)][int(file_path[people][-2:])-1]:
                 label = 1
             datas.append(perip_data)
             labels.append(label)

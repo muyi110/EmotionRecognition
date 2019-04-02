@@ -22,6 +22,7 @@ def moving_average(X, seq_length, windows=6):
     result_list = []
     for trial in range(numbers_trial):
         trial_list.append(X[trial*numbers_one_trial:(trial+1)*numbers_one_trial,:,:])
+    smooth_mv_list = [] # 保存滑动平均后的结果，其中每一项shape=(128, 60)（2019-03-26添加）
     # 开始对每一个实验进行滑动平均处理
     for trial in trial_list:
         # 每一个 trial 的 shape=(numbers_one_trial, features, seq_length)
@@ -40,14 +41,19 @@ def moving_average(X, seq_length, windows=6):
         # 开始处理最开始一个窗口中的数据
         for i in range(windows-1):
             one_trial_feqtures[:, i] = temp_X[:, 0:i+1].mean(axis=1)
-        # 将特征进行 0-1 处理（沿着特征轴）
-        _max = one_trial_feqtures.max(axis=0).reshape(1,-1)
-        _min = one_trial_feqtures.min(axis=0).reshape(1,-1)
-        one_trial_feqtures = (one_trial_feqtures-_min) / _max
-        # 将滤波后的 60s 长按照原来时间窗口，还原
-        for i in range(numbers_one_trial):
-            result_list.append(one_trial_feqtures[:, i:(i+seq_length)])
+        smooth_mv_list.append(one_trial_feqtures)
 
+    smooth_mv_list = np.array(smooth_mv_list)
+    assert(smooth_mv_list.shape == (40, 128, 60))
+    # 特征开始0-1化处理
+    _max = smooth_mv_list.max(axis=0, keepdims=True)
+    _min = smooth_mv_list.min(axis=0, keepdims=True)
+    smooth_mv_list = (smooth_mv_list - _min) / (_max - _min + 1e-8)
+    assert(smooth_mv_list.shape == (40, 128, 60))
+    # 将滤波后的 60s 长按照原来时间窗口，还原
+    for k in range(40):
+        for j in range(numbers_one_trial):
+            result_list.append(smooth_mv_list[k,:,:][:, j:(j+seq_length)])
     assert (np.array(result_list).shape == X.shape)
     return result_list
 

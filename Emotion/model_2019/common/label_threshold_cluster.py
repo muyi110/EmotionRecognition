@@ -7,7 +7,7 @@ import os
 import numpy as np
 from sklearn.cluster import KMeans
 
-SAMPLE_PATH = "../../data_analysis/samples/"
+SAMPLE_PATH = "../../samples/"
 
 def get_samples_labels(path):
     samples_dirs = os.listdir(path) #目录的顺序是随机的
@@ -21,7 +21,7 @@ def get_samples_labels(path):
 def kmeans_cluster(input_data, k=2):
     labels = input_data
     assert (len(labels) == 32)
-    kmeans = KMeans(n_clusters=k, random_state=None)
+    kmeans = KMeans(n_clusters=k, random_state=33)
     label_center_list_v = []
     label_center_list_a = []
     numbers_temp_v = []

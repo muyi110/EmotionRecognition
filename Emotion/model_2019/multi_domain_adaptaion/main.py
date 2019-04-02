@@ -73,7 +73,7 @@ if __name__ == "__main__":
     samples_info_dic = {}
     for people_num_ in people_num_list:
         datas, labels = read_data(people_list=[people_num_], windows=windows, overlapping=windows-1, 
-                                  classify_object_name=1, mv_flag=True, lds_flag=False)
+                                  classify_object_name=0, mv_flag=True, lds_flag=False)
         datas = np.array(datas)
         labels = np.array(labels)
         datas = datas.transpose((0,2,1))
@@ -149,9 +149,9 @@ if __name__ == "__main__":
         print(accuracy_results_dic)
         print("F1 score: ")
         print(F1_score_results_dic)
-    np.save("./result/mv/arousal/"+str(windows)+"/accuracy", accuracy_results_dic)
-    np.save("./result/mv/arousal/"+str(windows)+"/F1_score", F1_score_results_dic)
-    np.save("./result/mv/arousal/"+str(windows)+"/samples", samples_info_dic)
+    np.save("./result/mv/valence/"+str(windows)+"/accuracy", accuracy_results_dic)
+    np.save("./result/mv/valence/"+str(windows)+"/F1_score", F1_score_results_dic)
+    np.save("./result/mv/valence/"+str(windows)+"/samples", samples_info_dic)
     print("accuracy: ")
     print(accuracy_results_dic)
     sum_ = 0
