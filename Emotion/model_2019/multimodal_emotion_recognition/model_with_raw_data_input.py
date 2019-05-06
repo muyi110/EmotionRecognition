@@ -65,6 +65,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             features = TCN(self.inputs, n_outputs, self.num_channels, self.sequence_length, 
                            self.kernel_size, self.dropout, is_training=self._training)
             self.feature = features[:, -1, :]
+            self.feature_norm = tf.layers.batch_normalization(self.feature, training=self._training) # BN层
         with tf.variable_scope("EEG_confidence"):
             EEG_output_temp = tf.contrib.layers.fully_connected(self.feature, 32, activation_fn=tf.nn.relu)
             EEG_logits = tf.contrib.layers.fully_connected(EEG_output_temp, 2, activation_fn=None)
@@ -105,6 +106,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             EOG_features = TCN(self.EOG_inputs, 2, [512, 256, 128], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.EOG_feature = EOG_features[:, -1, :]
+            self.EOG_feature_norm = tf.layers.batch_normalization(self.EOG_feature, training = self._training) # BN层
         with tf.variable_scope("EOG_confidence"):
             EOG_output_temp = tf.contrib.layers.fully_connected(self.EOG_feature, 32, activation_fn=tf.nn.relu)
             EOG_logits = tf.contrib.layers.fully_connected(EOG_output_temp, 2, activation_fn=None)
@@ -121,6 +123,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             EMG_features = TCN(self.EMG_inputs, 2, [512, 256, 128], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.EMG_feature = EMG_features[:, -1, :]
+            self.EMG_feature_norm = tf.layers.batch_normalization(self.EMG_feature, training=self._training) # BN层
         with tf.variable_scope("EMG_confidence"):
             EMG_output_temp = tf.contrib.layers.fully_connected(self.EMG_feature, 32, activation_fn=tf.nn.relu)
             EMG_logits = tf.contrib.layers.fully_connected(EMG_output_temp, 2, activation_fn=None)
@@ -137,6 +140,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             GSR_features = TCN(self.GSR_inputs, 2, [256, 128, 64], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.GSR_feature = GSR_features[:, -1, :]
+            self.GSR_feature_norm = tf.layers.batch_normalization(self.GSR_feature, training=self._training) # BN层
         with tf.variable_scope("GSR_confidence"):
             GSR_output_temp = tf.contrib.layers.fully_connected(self.GSR_feature, 32, activation_fn=tf.nn.relu)
             GSR_logits = tf.contrib.layers.fully_connected(GSR_output_temp, 2, activation_fn=None)
@@ -153,6 +157,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             RSP_features = TCN(self.RSP_inputs, 2, [256, 128, 64], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.RSP_feature = RSP_features[:, -1, :]
+            self.RSP_feature_norm = tf.layers.batch_normalization(self.RSP_feature, training=self._training) # BN层
         with tf.variable_scope("RSP_confidence"):
             RSP_output_temp = tf.contrib.layers.fully_connected(self.RSP_feature, 32, activation_fn=tf.nn.relu)
             RSP_logits = tf.contrib.layers.fully_connected(RSP_output_temp, 2, activation_fn=None)
@@ -169,6 +174,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             BLV_features = TCN(self.BLV_inputs, 2, [256, 128, 64], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.BLV_feature = BLV_features[:, -1, :]
+            self.BLV_feature_norm = tf.layers.batch_normalization(self.BLV_feature, training=self._training) # BN层
         with tf.variable_scope("BLV_confidence"):
             BLV_output_temp = tf.contrib.layers.fully_connected(self.BLV_feature, 32, activation_fn=tf.nn.relu)
             BLV_logits = tf.contrib.layers.fully_connected(BLV_output_temp, 2, activation_fn=None)
@@ -185,19 +191,21 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             TMR_features = TCN(self.TMR_inputs, 2, [256, 128, 64], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.TMR_feature = TMR_features[:, -1, :]
+            self.TMR_feature_norm = tf.layers.batch_normalization(self.TMR_feature, training=self._training) # BN层
         with tf.variable_scope("TMR_confidence"):
             TMR_output_temp = tf.contrib.layers.fully_connected(self.TMR_feature, 32, activation_fn=tf.nn.relu)
             TMR_logits = tf.contrib.layers.fully_connected(TMR_output_temp, 2, activation_fn=None)
             self.TMR_confidence = tf.nn.softmax(TMR_logits, name="TMR_confidence")[:,0:1] # softmax的第一个输出为置信得分
         # 将各个传感器数据开始组合（这里采用级联的方式实现）
         EEG = self.EEG_confidence * self.feature
-        EOG = self.EOG_confidence * self.EOG_feature
-        EMG = self.EMG_confidence * self.EMG_feature
-        GSR = self.GSR_confidence * self.GSR_feature
-        RSP = self.RSP_confidence * self.RSP_feature
-        BLV = self.BLV_confidence * self.BLV_feature
-        TMR = self.TMR_confidence * self.TMR_feature
+        EOG = self.EOG_confidence * self.EOG_feature_norm
+        EMG = self.EMG_confidence * self.EMG_feature_norm
+        GSR = self.GSR_confidence * self.GSR_feature_norm
+        RSP = self.RSP_confidence * self.RSP_feature_norm
+        BLV = self.BLV_confidence * self.BLV_feature_norm
+        TMR = self.TMR_confidence * self.TMR_feature_norm
         self.concat_feature = tf.concat([EEG, EOG, EMG, GSR, RSP, BLV, TMR], axis=1)
+        #self.concat_feature = EEG + EOG + EMG + GSR + RSP + BLV + TMR
         #self.concat_feature = self.EOG_feature
         with tf.variable_scope("classifier"):
             concat_logit_1 = tf.contrib.layers.fully_connected(self.concat_feature, 100, activation_fn=tf.nn.relu)
