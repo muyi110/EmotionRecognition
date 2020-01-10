@@ -142,7 +142,7 @@ def split_datas_with_cross_validation(datas_all, labels, windows, seed=None):
     return datas_train_all, labels_train, datas_test_all, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(0, 32))
+    people_num_list = list(range(2, 32))
     windows = 9               # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果

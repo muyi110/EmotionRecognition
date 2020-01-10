@@ -202,14 +202,14 @@ class MDANN():
 
                     if test_acc > best_acc:
                         best_acc = test_acc
-                        self.save("./my_model/"+self._num_+"/train_model.ckpt")
+                        self.save("./my_model/"+self._num_+"/train_model_A.ckpt")
             return self
     
     def save(self, path):
         self._saver.save(self._session, path)
     
     def restore(self):
-        path = "./my_model/"+self._num_+"/train_model.ckpt"
+        path = "./my_model/"+self._num_+"/train_model_A.ckpt"
         self._saver.restore(self._session, path)
 
     def predict_proba(self, X):

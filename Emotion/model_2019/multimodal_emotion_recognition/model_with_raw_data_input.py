@@ -5,6 +5,7 @@ from tcn import TCN
 from utils import batch_generator
 from gradient_reversal import gradient_reversal
 from sklearn.exceptions import NotFittedError
+from mcca_loss import mcca_loss
 
 class MMJLNNModel(): # 多模态联合学习神经网络
     def __init__(self, 
@@ -103,7 +104,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #EOG_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #EOG_outputs, EOG_states = tf.nn.dynamic_rnn(EOG_lstm_cell, EOG_conv_output, dtype=tf.float32)
             #self.EOG_feature = EOG_states[1]
-            EOG_features = TCN(self.EOG_inputs, 2, [512, 256, 128], 9, 
+            EOG_features = TCN(self.EOG_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.EOG_feature = EOG_features[:, -1, :]
             self.EOG_feature_norm = tf.layers.batch_normalization(self.EOG_feature, training = self._training) # BN层
@@ -120,7 +121,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #EMG_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #EMG_outputs, EMG_states = tf.nn.dynamic_rnn(EMG_lstm_cell, EMG_conv_output, dtype=tf.float32)
             #self.EMG_feature = EMG_states[1]
-            EMG_features = TCN(self.EMG_inputs, 2, [512, 256, 128], 9, 
+            EMG_features = TCN(self.EMG_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.EMG_feature = EMG_features[:, -1, :]
             self.EMG_feature_norm = tf.layers.batch_normalization(self.EMG_feature, training=self._training) # BN层
@@ -137,7 +138,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #GSR_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #GSR_outputs, GSR_states = tf.nn.dynamic_rnn(GSR_lstm_cell, GSR_conv_output, dtype=tf.float32)
             #self.GSR_feature = GSR_states[1]
-            GSR_features = TCN(self.GSR_inputs, 2, [256, 128, 64], 9, 
+            GSR_features = TCN(self.GSR_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.GSR_feature = GSR_features[:, -1, :]
             self.GSR_feature_norm = tf.layers.batch_normalization(self.GSR_feature, training=self._training) # BN层
@@ -154,7 +155,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #RSP_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #RSP_outputs, RSP_states = tf.nn.dynamic_rnn(RSP_lstm_cell, RSP_conv_output, dtype=tf.float32)
             #self.RSP_feature = RSP_states[1]
-            RSP_features = TCN(self.RSP_inputs, 2, [256, 128, 64], 9, 
+            RSP_features = TCN(self.RSP_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.RSP_feature = RSP_features[:, -1, :]
             self.RSP_feature_norm = tf.layers.batch_normalization(self.RSP_feature, training=self._training) # BN层
@@ -171,7 +172,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #BLV_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #BLV_outputs, BLV_states = tf.nn.dynamic_rnn(BLV_lstm_cell, BLV_conv_output, dtype=tf.float32)
             #self.BLV_feature = BLV_states[1]
-            BLV_features = TCN(self.BLV_inputs, 2, [256, 128, 64], 9, 
+            BLV_features = TCN(self.BLV_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.BLV_feature = BLV_features[:, -1, :]
             self.BLV_feature_norm = tf.layers.batch_normalization(self.BLV_feature, training=self._training) # BN层
@@ -188,7 +189,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
             #TMR_lstm_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.n_neurons, activation=tf.nn.relu)
             #TMR_outputs, TMR_states = tf.nn.dynamic_rnn(TMR_lstm_cell, TMR_conv_output, dtype=tf.float32)
             #self.TMR_feature = TMR_states[1]
-            TMR_features = TCN(self.TMR_inputs, 2, [256, 128, 64], 9, 
+            TMR_features = TCN(self.TMR_inputs, 2, [128, 64, 32], 9, 
                            self.kernel_size, 0.8, is_training=self._training)
             self.TMR_feature = TMR_features[:, -1, :]
             self.TMR_feature_norm = tf.layers.batch_normalization(self.TMR_feature, training=self._training) # BN层
@@ -205,6 +206,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
         BLV = self.BLV_confidence * self.BLV_feature_norm
         TMR = self.TMR_confidence * self.TMR_feature_norm
         self.concat_feature = tf.concat([EEG, EOG, EMG, GSR, RSP, BLV, TMR], axis=1)
+        self.mcca_loss = mcca_loss((32, 32, 32, 32, 32, 32, 32), self.concat_feature, self.batch_size) # mcca 损失
         #self.concat_feature = EEG + EOG + EMG + GSR + RSP + BLV + TMR
         #self.concat_feature = self.EOG_feature
         with tf.variable_scope("classifier"):
@@ -221,7 +223,7 @@ class MMJLNNModel(): # 多模态联合学习神经网络
         predictor_loss = tf.reduce_mean(self.predictor_loss) # 情绪分类损失
         domain_loss = tf.reduce_mean(self.domain_loss_class_one) + tf.reduce_mean(self.domain_loss_class_two) # 域损失
         feature_loss = self._calculate_feature_loss() # 特征损失
-        total_loss = predictor_loss + domain_loss + feature_loss*0.1 # 总的损失节点
+        total_loss = predictor_loss + domain_loss + feature_loss*0.1 + self.mcca_loss # 总的损失节点
         #total_loss = predictor_loss
         # 构建训练节点
         train_op = self.optimizer_class(learning_rate=self.learning_rate).minimize(total_loss)

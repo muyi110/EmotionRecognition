@@ -8,6 +8,7 @@ import time
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.exceptions import NotFittedError
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import silhouette_score, normalized_mutual_info_score, adjusted_mutual_info_score
 from sklearn.model_selection import RandomizedSearchCV
 from tcn import TCN
 from read_data import read_data, index_generator
@@ -39,7 +40,7 @@ class TCNClassifier(BaseEstimator, ClassifierMixin):
         self._session = None
     def _TCN(self, inputs, n_outputs, training):
         '''构建 TCN 模型'''
-        outputs = TCN(inputs, n_outputs, self.num_channels, 
+        outputs, self.feature = TCN(inputs, n_outputs, self.num_channels, 
                       self.sequence_length, self.kernel_size, self.dropout, is_training=training)
         return outputs
     def _bulid_graph(self, n_outputs):
@@ -150,32 +151,25 @@ class TCNClassifier(BaseEstimator, ClassifierMixin):
                         print("Early stopping!")
                 else:
                     total_loss = 0 
-                    total_acc = 0
-                    for i in range(len(y) // 8):
-                        X_batch = X[i*8:(i+1)*8,:,:]
-                        y_batch = y[i*8:(i+1)*8]
-                        loss_train, acc_train = sess.run([self._loss, self._accuracy], 
-                                                      feed_dict={self._X:X_batch, self._y:y_batch})
-                        total_loss += loss_train
-                        total_acc += acc_train
-                        end_time = time.time()
-                    print("{}\ttraining loss: {:.6f}\t|  training accuracy: {:.2f}% | time: {:.2f}s".format(epoch, 
-                          total_loss/(len(y)//8), (total_acc / (len(y)//8))*100, end_time-start_time))
+                    total_acc = 0                   
+                    loss_train, acc_train = sess.run([self._loss, self._accuracy], 
+                                                  feed_dict={self._X:X_batch, self._y:y_batch})
+                    total_loss = loss_train
+                    total_acc = acc_train
+                    end_time = time.time()
+                    print("{} training loss: {:.6f}\t|  training accuracy: {:.2f}% | time: {:.2f}s".format(epoch, 
+                          total_loss, (total_acc)*100, end_time-start_time))
                     if X_test is not None and y_test is not None and epoch % 1 == 0:
                         total_acc_test = 0
                         total_loss_test = 0
-                        for i in range(len(y_test) // 8):
-                            X_batch_test = X_test[i*8:(i+1)*8, :, :]
-                            y_batch_test = y_test[i*8:(i+1)*8]
-                            loss_test, acc_test = sess.run([self._loss, self._accuracy], 
-                                                            feed_dict={self._X:X_batch_test, self._y:y_batch_test, self._training:False})
-                            total_acc_test += acc_test
-                            total_loss_test += loss_test
+                        loss_test, acc_test = sess.run([self._loss, self._accuracy], 
+                                                        feed_dict={self._X:X_test, self._y:y_test, self._training:False})
+                        total_acc_test = acc_test
+                        total_loss_test = loss_test
                         if total_acc_test >= best_acc:
                             best_acc = total_acc_test
-                            self.save("./my_model/"+self._num_+"/train_model.ckpt") # 将训练模型保存
-                        print("learning rate: ", self.learning_rate)
-                        print("Test accuracy: {:.4f}%\t  Test loss: {:.6f}".format((total_acc_test / (len(y_test) // 8))*100, total_loss_test/(len(y_test) // 8)))
+                            self.save("./my_model/"+self._num_+"/train_model_A.ckpt") # 将训练模型保存
+                        print("Test accuracy: {:.4f}%\t  Test loss: {:.6f}".format((total_acc_test )*100, total_loss_test))
                         # loss_test, acc_test = sess.run([self._loss, self._accuracy], 
                         #                                feed_dict={self._X:X_test, self._y:y_test})
                         # print("Test accuracy: {:.4f}%\t Test loss: {:.6f}".format(acc_test*100, loss_test))
@@ -193,7 +187,7 @@ class TCNClassifier(BaseEstimator, ClassifierMixin):
     def save(self, path):
         self._saver.save(self._session, path)
     def restore(self):
-        path="./my_model/"+self._num_+"/train_model.ckpt"
+        path="./my_model/"+self._num_+"/train_model_A.ckpt"
         self._saver.restore(self._session, path)
 
 def split_datas_with_cross_validation(datas, labels, windows, seed=None):
@@ -268,14 +262,17 @@ def split_datas_with_cross_validatioan_random(datas, labels, windows, seed=None)
     return datas_train, labels_train, datas_test, labels_test
 
 if __name__ == "__main__":
-    people_num_list = list(range(2, 32))
+    people_num_list = list(range(0, 32))
     windows = 9 # 样本窗口大小
     accuracy_results_dic = {} # 一个字典，保存最终的结果
     F1_score_results_dic = {} # 一个字典，保存最终的结果
     samples_info_dic = {}
+    silhouette_score_dic = {}
+    normalized_mutual_info_score_dic = {}
+    adjusted_mutual_info_score_dic = {}
     for people_num_ in people_num_list:
         datas, labels = read_data(people_list=[people_num_], windows=windows, overlapping=windows-1, 
-                                  classify_object_name=0, mv_flag=True, lds_flag=False)
+                                  classify_object_name=1, mv_flag=True, lds_flag=False)
         datas = np.array(datas)
         labels = np.array(labels)
         datas = datas.transpose((0,2,1))
@@ -286,6 +283,9 @@ if __name__ == "__main__":
         F1_scores_list = []
         accuracy_list = []
         samples_info = []
+        silhouette_score_list = []
+        normalized_mutual_info_score_list = []
+        adjusted_mutual_info_score_list = []
         for number in range(cross_validation_number):
             seed_ = seed_ + 1
             datas_train, train_labels, datas_test, test_labels = split_datas_with_cross_validation(datas, 
@@ -315,18 +315,22 @@ if __name__ == "__main__":
             tcn.fit(X=datas_train, y=train_labels, n_epochs=351, X_test=datas_test, y_test=test_labels,
                     people_num_=windows)
             tcn.restore()
-            total_acc_test = 0
-            y_pred_labels = []
-            for i in range(len(test_labels) // 8):
-                X_batch_test = datas_test[i*8:(i+1)*8, :, :]
-                y_batch_test = test_labels[i*8:(i+1)*8]
-                y_pred = tcn.predict(X_batch_test)
-                y_pred_labels += list(y_pred)
-                total_acc_test += accuracy_score(y_batch_test, y_pred)
-            print("Test accuracy: {:.4f}%".format((total_acc_test / (len(test_labels) // 8))*100))
+            y_pred = tcn.predict(datas_test)
+            total_acc_test = accuracy_score(test_labels, y_pred)
+            y_pred_labels = list(y_pred)
+            print("Test accuracy: {:.4f}%".format(total_acc_test*100))
+
             F1_scores_list.append(f1_score(test_labels, np.array(y_pred_labels)))
-            temp = total_acc_test / (len(test_labels)//8)
+            temp = total_acc_test
             accuracy_list.append(temp)
+            # 下面计算类别结果评价指标
+            normalized_mutual_info_score_list.append(normalized_mutual_info_score(test_labels, y_pred.reshape(-1)))
+            adjusted_mutual_info_score_list.append(adjusted_mutual_info_score(test_labels, y_pred.reshape(-1)))
+            if(len(np.unique(y_pred.reshape(-1))) == 2):
+                silhouette_score_list.append(silhouette_score(tcn._session.run(tcn.feature, feed_dict={tcn._X:datas_test}), y_pred.reshape(-1)))
+            else:
+                silhouette_score_list.append(0)
+
             tf.reset_default_graph()
         print("-------------------------------accuracy_list--------------------------------------")
         print(accuracy_list)
@@ -340,17 +344,60 @@ if __name__ == "__main__":
         print("F1 score max: ", max(F1_scores_list))
         print("-------------------------------sampels info--------------------------------------")
         print(samples_info)
+
+        print("-------------------------------metrics--------------------------------------")
+        print("adjusted_mutual_info_score: ", adjusted_mutual_info_score_list)
+        print("adjusted_mutual_info_score mean: ", sum(adjusted_mutual_info_score_list) / 5)
+        print("normalized_mutual_info_score: ", normalized_mutual_info_score_list)
+        print("normalized_mutual_info_score mean: ", sum(normalized_mutual_info_score_list) / 5)
+        print("silhouette_score: ", silhouette_score_list)
+        print("silhouette_score mean: ", sum(silhouette_score_list) / 5)
         accuracy_results_dic[str(people_num_)] = accuracy_list + \
                                               [min(accuracy_list), max(accuracy_list), sum(accuracy_list)/5]
         F1_score_results_dic[str(people_num_)] = F1_scores_list + \
                                               [min(F1_scores_list), max(F1_scores_list), sum(F1_scores_list)/5]
         samples_info_dic[str(people_num_)] = samples_info
-    np.save("./result/mv_new/valence/"+str(windows)+"/accuracy_20190326", accuracy_results_dic)
-    np.save("./result/mv_new/valence/"+str(windows)+"/F1_score_20190326", F1_score_results_dic)
-    np.save("./result/mv_new/valence/"+str(windows)+"/samples_2_20190326", samples_info_dic)
+        adjusted_mutual_info_score_dic[str(people_num_)] = adjusted_mutual_info_score_list + [sum(adjusted_mutual_info_score_list) / 5]
+        normalized_mutual_info_score_dic[str(people_num_)] = normalized_mutual_info_score_list + [sum(normalized_mutual_info_score_list) / 5]
+        silhouette_score_dic[str(people_num_)] = silhouette_score_list + [sum(silhouette_score_list) / 5]
+        print("accuracy: ")
+        print(accuracy_results_dic)
+        print("F1 score: ")
+        print(F1_score_results_dic)
+        print("adjusted_mutual_info_score: ")
+        print(adjusted_mutual_info_score_dic)
+        print("normalized_mutual_info_score:")
+        print(normalized_mutual_info_score_dic)
+        print("silhouette_score")
+        print(silhouette_score_dic)
+    np.save("./result/mv_new/arousal/"+str(windows)+"/accuracy_0804_128", accuracy_results_dic)
+    np.save("./result/mv_new/arousal/"+str(windows)+"/F1_score_0804_128", F1_score_results_dic)
+    np.save("./result/mv_new/arousal/"+str(windows)+"/samples_0804_128", samples_info_dic)
+    np.save("./result/mv/arousal/"+str(windows)+"/adjusted_mutual_info_score_0804_128", adjusted_mutual_info_score_dic)
+    np.save("./result/mv/arousal/"+str(windows)+"/normalized_mutual_info_score_dic_0804_128", normalized_mutual_info_score_dic)
+    np.save("./result/mv/arousal/"+str(windows)+"/silhouette_score_dic_0804_128", silhouette_score_dic)
     print("accuracy: ")
     print(accuracy_results_dic)
+    sum_ = 0
+    for i in range(32):
+        sum_ += accuracy_results_dic[str(i)][-1]
+    print("acc: ", sum_/32)
     print("F1 score: ")
     print(F1_score_results_dic)
+    sum_ = 0
+    for i in range(32):
+        sum_ += F1_score_results_dic[str(i)][-1]
+    print("f1 acc: ", sum_/32)
     print("sample info")
     print(samples_info_dic)
+    print("metrics: ")
+    sum_1 = 0
+    sum_2 = 0
+    sum_3 = 0
+    for i in range(32):
+        sum_1 += adjusted_mutual_info_score_dic[str(i)][-1]
+        sum_2 += normalized_mutual_info_score_dic[str(i)][-1]
+        sum_3 += silhouette_score_dic[str(i)][-1]
+    print("adjusted_mutual_info_score: ", sum_1 / 32)
+    print("normalized_mutual_info_score: ", sum_2 / 32)
+    print("silhouette_score: ", sum_3 / 32)

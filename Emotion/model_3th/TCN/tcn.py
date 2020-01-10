@@ -134,5 +134,5 @@ def TCN(input_layer, output_size, num_channels, sequence_length, kernel_size, dr
     # features_temp = tf.sigmoid(features_temp)
     # linear = tf.layers.flatten(features_temp)
     linear = tf.contrib.layers.fully_connected(tcn[:, -1, :], output_size, activation_fn=None)
-    print("linear: ", linear.get_shape())
-    return linear
+    feature = tcn[:, -1, :]
+    return linear, feature
